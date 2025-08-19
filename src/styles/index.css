@@ -1,0 +1,19 @@
+@import "./fonts.css";
+
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #145a74;
+  --color-neutral-light: #fafafa;
+  --color-neutral-dark: #272b2e;
+  --color-primary-light: #e5f3f6;
+  --color-accent: #1fb993;
+  --color-success: #3ba66b;
+  --color-error: #d64f4f;
+  --color-warning: #e6a846;
+  --color-info: #3b7edb;
+}
+
+@theme {
+  --font-hyper: "Atkinson Hyperlegible Next", system-ui, sans-serif;
+}
