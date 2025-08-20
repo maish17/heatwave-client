@@ -14,7 +14,7 @@ export interface NavbarProps {
   className?: string;
 }
 
-const defaultBrand: Brand = { label: "Legible", href: "/" };
+const defaultBrand: Brand = { label: "Heatwave", href: "/" };
 const defaultLinks: NavLink[] = [
   { label: "About", href: "/" },
   { label: "Contact", href: "/" },
@@ -28,13 +28,13 @@ const Navbar: FC<NavbarProps> = ({
 }) => (
   <nav
     className={clsx(
-      "flex items-center justify-between px-6 py-4 bg-brand text-neutral-light",
+      "flex items-center justify-between px-6 py-4 bg-tan text-text",
       className
     )}
     role="navigation"
     aria-label="Main navigation"
   >
-    <div className="text-xl font-bold font-hyper">
+    <div className="text-3xl font-extrabold tracking-wider font-gothic">
       <a
         href={brand.href}
         className="hover:underline focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-light"

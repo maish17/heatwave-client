@@ -1,34 +1,23 @@
 @font-face {
-  font-family: "Atkinson Hyperlegible Next";
-  src: url("./assets/fonts/AtkinsonHyperlegibleNext-Regular.woff2")
-    format("woff2");
-  font-weight: 400;
+  font-family: "ITC Serif Gothic";
+  src: url("../assets/fonts/ITCSerifGothic.woff2") format("woff2");
+  font-weight: normal;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Atkinson Hyperlegible Next";
-  src: url("./assets/fonts/AtkinsonHyperlegibleNext-RegularItalic.woff2")
-    format("woff2");
-  font-weight: 400;
-  font-style: italic;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Atkinson Hyperlegible Next";
-  src: url("./assets/fonts/AtkinsonHyperlegibleNext-Bold.woff2") format("woff2");
-  font-weight: 700;
+  font-family: "IBM Plex Mono";
+  src: url("../assets/fonts/IBMPlexMono-Regular.woff2") format("woff2");
+  font-weight: normal;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Atkinson Hyperlegible Next";
-  src: url("./assets/fonts/AtkinsonHyperlegibleNext-BoldItalic.woff2")
-    format("woff2");
-  font-weight: 700;
-  font-style: italic;
+  font-family: "IBM Plex Sans";
+  src: url("../assets/fonts/IBMPlexSans-Regular.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
   font-display: swap;
 }
