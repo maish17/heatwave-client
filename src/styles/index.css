@@ -3,17 +3,27 @@
 @import "tailwindcss";
 
 @theme {
-  --color-tan: #c09d74;
   --color-orange: #af5418;
   --color-red: #871e16;
   --color-maroon: #4e080c;
-  --color-bg: #f5efe7;
+  --color-bg: #d8c5ad;
   --color-text: #1b1e22;
   --color-blue: #a6d5e8;
 }
 
 @theme {
-  --font-gothic: "ITC Serif Gothic", system-ui, serif;
+  --font-garamond: "Apple Garamond", system-ui, serif;
   --font-plexsans: "IBM Plex Sans", system-ui, sans-serif;
   --font-plexmono: "IBM Plex Mono", system-ui, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0; /* in case Tailwind preflight is off */
+  background: var(--color-bg);
+  color: var(--text);
 }
