@@ -14,11 +14,16 @@
     "serve": "tsx server/index.ts"
   },
   "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/cli": "^7.4.3",
+    "@capacitor/core": "^7.4.3",
     "@mozilla/readability": "^0.6.0",
     "clsx": "^2.1.1",
     "express": "^5.1.0",
     "jsdom": "^26.1.0",
+    "maplibre-gl": "^5.6.2",
     "pdfjs-dist": "^5.3.93",
+    "pmtiles": "^4.3.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

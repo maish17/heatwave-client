@@ -19,7 +19,7 @@ const HeatwaveHeader: FC<Props> = ({
   label = "Heatwave",
   elbowX = 150, // landscape default
   arcRise = 7,
-  offsetY = 37, // stays constant in both orientations
+  offsetY = 50, // stays constant in both orientations
   seamPad = 1,
   tOuter = 7,
   tMid = 7,
@@ -99,10 +99,8 @@ const HeatwaveHeader: FC<Props> = ({
 
   return (
     <header
-      className={clsx(
-        "fixed inset-x-0 top-0 z-50 bg-[var(--color-bg)]",
-        className
-      )}
+      className={clsx("fixed inset-x-0 top-0 z-50 bg-transparent", className)}
+      style={{ height: `${H}px` }}
     >
       <div className="relative">
         <svg
@@ -116,6 +114,7 @@ const HeatwaveHeader: FC<Props> = ({
           preserveAspectRatio="xMinYMin meet" // no non-uniform stretch → no warping
           aria-hidden="true"
         >
+          <rect x="0" y="0" width={vbW} height={H} fill="var(--color-bg)" />
           <defs>
             <path id="pOuter" d={pathFor(yOuter)} />
             <path id="pMid" d={pathFor(yMid)} />
@@ -187,7 +186,7 @@ const HeatwaveHeader: FC<Props> = ({
         </svg>
 
         {/* Title pinned; no breakpoint shifts */}
-        <div className="absolute z-10 left-3 top-0">
+        <div className="absolute z-10 left-2 top-3">
           <h1
             className="font-garamond text-[clamp(3px,40px,130px)] leading-none text-text"
             style={{ letterSpacing: "0.02em" }}

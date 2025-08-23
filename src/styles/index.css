@@ -3,10 +3,10 @@
 @import "tailwindcss";
 
 @theme {
-  --color-orange: #af5418;
-  --color-red: #871e16;
-  --color-maroon: #4e080c;
-  --color-bg: #d8c5ad;
+  --color-orange: #e19637;
+  --color-red: #b44427;
+  --color-maroon: #5c0f14;
+  --color-bg: #e6d2bc;
   --color-text: #1b1e22;
   --color-blue: #a6d5e8;
 }
@@ -23,7 +23,7 @@ body,
   height: 100%;
 }
 body {
-  margin: 0; /* in case Tailwind preflight is off */
+  margin: 0;
   background: var(--color-bg);
   color: var(--text);
 }
