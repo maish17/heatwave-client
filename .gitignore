@@ -1,2 +1,10 @@
 node_modules
 public/tiles/*.pmtiles
+dist/
+android/app/src/main/assets/public/
+.wrangler/
+*.pmtiles
+*.mbtiles
+*.sqlite
+**/tiles/
+.DS_Store
