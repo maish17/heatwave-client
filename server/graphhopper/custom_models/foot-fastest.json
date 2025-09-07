@@ -1,0 +1,10 @@
+{
+  "speed": [
+    { "if": "true", "limit_to": 5 }
+  ],
+  "priority": [
+    { "if": "road_access == PRIVATE", "multiply_by": 0 },
+    { "if": "road_class == MOTORWAY || road_class == TRUNK", "multiply_by": 0 }
+  ],
+  "distance_influence": 100
+}

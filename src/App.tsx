@@ -1,8 +1,8 @@
-import { Navbar, MapView } from "./components";
-// import Navbar from "./components/Navbar/Navbar";
-// import UploadScreen from "./components/UploadScreen";
+// src/App.tsx
+import Navbar from "./components/Navbar";
+import MapView from "./components/MapView";
 
-function App() {
+export default function App() {
   return (
     <>
       <Navbar />
@@ -10,5 +10,3 @@ function App() {
     </>
   );
 }
-
-export default App;

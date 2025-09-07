@@ -1,0 +1,13 @@
+{
+    "speed": [
+      { "if": "true", "limit_to": 5 }
+    ],
+    "priority": [
+      { "if": "road_access == PRIVATE", "multiply_by": 0 },
+      { "if": "road_class == MOTORWAY || road_class == TRUNK", "multiply_by": 0 },
+      { "if": "road_class == PRIMARY || road_class == SECONDARY", "multiply_by": 0.6 },
+      { "if": "surface == ASPHALT", "multiply_by": 0.9 },
+      { "if": "surface == DIRT || surface == GRASS || surface == GRAVEL", "multiply_by": 1.05 }
+    ],
+    "distance_influence": 90
+  }

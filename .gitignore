@@ -8,3 +8,4 @@ android/app/src/main/assets/public/
 *.sqlite
 **/tiles/
 .DS_Store
+.env*
