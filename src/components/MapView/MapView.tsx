@@ -12,8 +12,7 @@ import { Geolocation } from "@capacitor/geolocation";
 let pmtilesRegistered = false;
 
 // Your vector tiles (preferred)
-const PMTILES_URL =
-  "https://pub-e283a056eec14b7c97747e17f8728eed.r2.dev/texas.pmtiles?v=dev3";
+const PMTILES_URL = "https://tiles.heatwaves.app/texas.pmtiles";
 
 // Guaranteed-safe fallback style so the map always renders
 const FALLBACK_STYLE_URL = "https://demotiles.maplibre.org/style.json";
