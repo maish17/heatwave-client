@@ -13,6 +13,7 @@ import { snapToLine, lengthBetween } from "../../lib/nav";
 import type { RouteResult } from "../../lib/routing";
 import type { ExpressionSpecification } from "maplibre-gl";
 import { openInfo, INFO_URL } from "../../lib/openInfo";
+import { Capacitor } from "@capacitor/core";
 
 let pmtilesRegistered = false;
 
@@ -578,22 +579,56 @@ export default function MapView() {
     // follow is ALWAYS on
     (async () => {
       try {
-        const status = await Geolocation.checkPermissions();
-        let state =
-          (status as any).location ??
-          (status as any).coarseLocation ??
-          (status as any).locationWhenInUse;
-        if (state !== "granted") {
-          const req = await Geolocation.requestPermissions();
-          state =
-            (req as any).location ??
-            (req as any).coarseLocation ??
-            (req as any).locationWhenInUse;
-        }
-        if (state === "granted") {
-          await startFollowing(true);
+        if (Capacitor.isNativePlatform()) {
+          // === Android/iOS (Capacitor runtime) ===
+          const status = await Geolocation.checkPermissions();
+          let state =
+            (status as any).location ??
+            (status as any).coarseLocation ??
+            (status as any).locationWhenInUse;
+
+          if (state !== "granted") {
+            const req = await Geolocation.requestPermissions();
+            state =
+              (req as any).location ??
+              (req as any).coarseLocation ??
+              (req as any).locationWhenInUse;
+          }
+
+          if (state === "granted") {
+            // iOS can still delay the first fix until we call getCurrentPosition once.
+            try {
+              await Geolocation.getCurrentPosition({
+                enableHighAccuracy: true,
+                timeout: 10000,
+              });
+            } catch {}
+            await startFollowing(true);
+          } else {
+            console.warn("[geo] native permission not granted:", state);
+          }
         } else {
-          console.warn("[geo] location permission not granted");
+          // === Web (heatwaves.app) ===
+          // Trigger the real browser permission prompt explicitly.
+          const promptOnce = () =>
+            new Promise<void>((resolve, reject) => {
+              if (!("geolocation" in navigator)) {
+                reject(new Error("navigator.geolocation not available"));
+                return;
+              }
+              navigator.geolocation.getCurrentPosition(
+                () => resolve(),
+                (err) => reject(err),
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+              );
+            });
+
+          try {
+            await promptOnce(); // shows the browser permission dialog
+            await startFollowing(true);
+          } catch (err) {
+            console.warn("[geo] browser geolocation denied/failed:", err);
+          }
         }
       } catch (e) {
         console.warn("[geo] permission error:", e);
@@ -1176,7 +1211,11 @@ export default function MapView() {
     await Geolocation.watchPosition(
       { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 },
       (pos, err) => {
-        if (err || !pos) return;
+        if (err) {
+          console.warn("[geo] watchPosition error:", err);
+          return;
+        }
+        if (!pos) return;
         const here: LngLat = [pos.coords.longitude, pos.coords.latitude];
 
         if (!meMarkerRef.current) {
