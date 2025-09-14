@@ -208,7 +208,7 @@ export default function MapView() {
   const [nav, _setNav] = useState<NavState | null>(null);
   // MapView.tsx (top-level in component)
   const [searchText, setSearchText] = useState("");
-
+  const [revBusy, setRevBusy] = useState(false);
   const [needsLocation, setNeedsLocation] = useState(false);
 
   const requestLocation = () => {
@@ -576,15 +576,16 @@ export default function MapView() {
       routeDestRef.current = dest;
       upsertDestMarker(dest);
 
-      // 👇 update the search bar text
+      setRevBusy(true);
       try {
         const { label } = await reverseGeocode(dest[0], dest[1], "en");
         setSearchText(label);
       } catch {
-        // fallback if reverse geocode hiccups
         setSearchText(
           `Dropped pin @ ${dest[1].toFixed(5)}, ${dest[0].toFixed(5)}`
         );
+      } finally {
+        setRevBusy(false);
       }
 
       const me = getMePoint();
@@ -1427,6 +1428,7 @@ export default function MapView() {
                 onPick={goToHit}
                 value={searchText}
                 onValueChange={setSearchText}
+                busy={revBusy} // 👈 NEW
               />
 
               {stats && (

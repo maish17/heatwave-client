@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { forwardGeocode, type ForwardHit } from "../../lib/geocode";
 
 type Props = {
-  className?: string; // ✅ add this
+  className?: string;
   value?: string;
   onValueChange?: (v: string) => void;
   biasCenter?: () => [number, number];
@@ -12,6 +12,7 @@ type Props = {
     bbox?: [number, number, number, number];
     label?: string;
   }) => void;
+  busy?: boolean; // 👈 NEW
 };
 
 export default function SearchBox({
@@ -20,6 +21,7 @@ export default function SearchBox({
   onValueChange,
   biasCenter,
   onPick,
+  busy = false, // 👈 NEW
 }: Props) {
   const [q, setQ] = useState(value ?? "");
   const [loading, setLoading] = useState(false);
@@ -165,8 +167,14 @@ export default function SearchBox({
           shadow-inner shadow-black/5
         "
       />
-      {loading && (
-        <div className="absolute right-2 top-2 text-xs text-gray-500">…</div>
+      {(loading || busy) && (
+        <div
+          className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[#5c0f14]"
+          aria-label="Loading"
+          aria-live="polite"
+        >
+          <div className="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
+        </div>
       )}
 
       {open && results.length > 0 && (

@@ -9,7 +9,7 @@ export type ForwardHit = {
 
 const NOMINATIM = "https://nominatim.openstreetmap.org";
 // 👇 put a real email per Nominatim policy
-const UA = "heatwave-client/0.1 (you@example.com)";
+const UA = "heatwave-client/0.1 (mmoylemaish@icloud.com)";
 
 const MBX = "https://api.mapbox.com/geocoding/v5/mapbox.places/";
 const MBX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
@@ -29,6 +29,40 @@ const TX_VIEWBOX_STR = `${TX_W},${TX_N},${TX_E},${TX_S}`; // nominatim (left,top
 
 // central place to enforce a min length (avoid 422s on "1", "16", etc.)
 const MIN_QUERY_LEN = 3;
+
+// ---- tiny caches (speed!) ----
+type CacheEntry<T> = { t: number; v: T };
+const CACHE_TTL_MS_FWD = 10 * 60 * 1000; // 10 min
+const CACHE_TTL_MS_REV = 30 * 60 * 1000; // 30 min
+const MAX_CACHE = 300;
+
+const forwardCache = new Map<string, CacheEntry<ForwardHit[]>>();
+const reverseCache = new Map<string, CacheEntry<{ label: string; raw: any }>>();
+const inflightFwd = new Map<string, Promise<ForwardHit[]>>();
+const inflightRev = new Map<string, Promise<{ label: string; raw: any }>>();
+
+function trimLRU<T>(m: Map<string, T>, max = MAX_CACHE) {
+  while (m.size > max) {
+    const k = m.keys().next().value;
+    m.delete(k);
+  }
+}
+function round(x: number, d = 3) {
+  const p = 10 ** d;
+  return Math.round(x * p) / p;
+}
+function fwdKey(
+  q: string,
+  opts?: { proximity?: [number, number]; lang?: string; limit?: number }
+) {
+  const prox = opts?.proximity
+    ? `${round(opts.proximity[0])},${round(opts.proximity[1])}`
+    : "";
+  return `${q.toLowerCase()}|${prox}|${opts?.lang ?? "en"}|${opts?.limit ?? 8}`;
+}
+function revKey(lng: number, lat: number, lang?: string) {
+  return `${round(lng, 5)},${round(lat, 5)}|${lang ?? "en"}`;
+}
 
 function redact(url: string) {
   return url.replace(/access_token=[^&]+/, () => {
@@ -54,34 +88,51 @@ export async function forwardGeocode(
     proximity?: [number, number];
     limit?: number;
     lang?: string;
-    countrycodes?: string; // will be forced to "us" anyway
+    countrycodes?: string;
   }
 ): Promise<ForwardHit[]> {
   const q = query.trim();
-  if (q.length < MIN_QUERY_LEN) {
-    if (import.meta.env.DEV)
-      console.debug(`[geocode] skip short query: "${q}"`);
-    return [];
-  }
+  if (q.length < MIN_QUERY_LEN) return [];
 
-  if (MBX_TOKEN) {
-    try {
-      const hits = await mapboxForward(q, opts);
-      if (hits.length) return hits;
-    } catch (e) {
-      console.warn("[geocode] mapbox failed, falling back:", e);
+  const key = fwdKey(q, opts);
+  const now = Date.now();
+
+  const hit = forwardCache.get(key);
+  if (hit && now - hit.t < CACHE_TTL_MS_FWD) return hit.v;
+
+  if (inflightFwd.has(key)) return inflightFwd.get(key)!;
+
+  const task = (async () => {
+    let result: ForwardHit[] = [];
+    if (MBX_TOKEN) {
+      try {
+        result = await mapboxForward(q, opts);
+      } catch (e) {
+        console.warn("[geocode] mapbox failed, falling back:", e);
+      }
+    } else {
+      console.warn(
+        "[geocode] No VITE_MAPBOX_TOKEN set; falling back to OSM (slower)."
+      );
     }
-  } else {
-    console.warn(
-      "[geocode] No VITE_MAPBOX_TOKEN set; address matches may be limited."
-    );
-  }
+    if (!result.length) {
+      try {
+        result = await nominatimForward(q, opts);
+      } catch (e) {
+        console.error("[geocode] nominatim failed:", e);
+        result = [];
+      }
+    }
+    forwardCache.set(key, { t: Date.now(), v: result });
+    trimLRU(forwardCache);
+    return result;
+  })();
 
+  inflightFwd.set(key, task);
   try {
-    return await nominatimForward(q, opts);
-  } catch (e) {
-    console.error("[geocode] nominatim failed:", e);
-    return [];
+    return await task;
+  } finally {
+    inflightFwd.delete(key);
   }
 }
 
@@ -91,14 +142,37 @@ export async function reverseGeocode(
   lat: number,
   lang?: string
 ): Promise<{ label: string; raw: any }> {
-  if (MBX_TOKEN) {
-    try {
-      return await mapboxReverse(lng, lat, lang);
-    } catch (e) {
-      console.warn("[reverse] mapbox failed, falling back:", e);
+  const key = revKey(lng, lat, lang);
+  const now = Date.now();
+
+  const hit = reverseCache.get(key);
+  if (hit && now - hit.t < CACHE_TTL_MS_REV) return hit.v;
+
+  if (inflightRev.has(key)) return inflightRev.get(key)!;
+
+  const task = (async () => {
+    let res: { label: string; raw: any };
+    if (MBX_TOKEN) {
+      try {
+        res = await mapboxReverse(lng, lat, lang);
+      } catch (e) {
+        console.warn("[reverse] mapbox failed, falling back:", e);
+        res = await nominatimReverse(lng, lat, lang);
+      }
+    } else {
+      res = await nominatimReverse(lng, lat, lang);
     }
+    reverseCache.set(key, { t: Date.now(), v: res });
+    trimLRU(reverseCache);
+    return res;
+  })();
+
+  inflightRev.set(key, task);
+  try {
+    return await task;
+  } finally {
+    inflightRev.delete(key);
   }
-  return await nominatimReverse(lng, lat, lang);
 }
 
 // ---------- Mapbox impls ----------
@@ -212,7 +286,8 @@ async function nominatimForward(
   url.searchParams.set("q", query);
   url.searchParams.set("format", "geojson");
   url.searchParams.set("limit", String(limit));
-  url.searchParams.set("addressdetails", "1");
+  // in nominatimForward(): change addressdetails from 1 -> 0
+  url.searchParams.set("addressdetails", "0"); // smaller response, we only use display_name
   url.searchParams.set("countrycodes", "us"); // guard to US
   // 🔒 hard clamp to Texas
   url.searchParams.set("viewbox", TX_VIEWBOX_STR);
