@@ -250,7 +250,7 @@ const HeatwaveHeader: FC<HeatwaveHeaderProps> = ({
           focusable="false"
         >
           {/* Background strictly on the LEFT of the stripes */}
-          <path d={bgPath} fill="var(--color-bg)" />
+          <path d={bgPath} fill="#EEE3D5" />
 
           <defs>
             <path id="pOuter" d={pOuter} />

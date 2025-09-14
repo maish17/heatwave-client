@@ -1,38 +1,74 @@
-import type { ReactNode } from "react";
+// src/components/BottomBar.tsx
+import { useEffect, useState, type ReactNode } from "react";
 import clsx from "clsx";
 
-type Props = {
-  className?: string;
-  children?: ReactNode; // put <SearchBox /> here
-};
+function useLandscape() {
+  const [land, setLand] = useState(false);
+  useEffect(() => {
+    const update = () => setLand(window.innerWidth > window.innerHeight);
+    update();
+    const mql = window.matchMedia?.("(orientation: landscape)");
+    mql?.addEventListener?.("change", update);
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      mql?.removeEventListener?.("change", update);
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, []);
+  return land;
+}
+
+type Props = { className?: string; children?: ReactNode };
 
 export default function BottomBar({ className = "", children }: Props) {
+  const landscape = useLandscape();
+  const rightSafe = "env(safe-area-inset-right, 0px)";
+
   return (
-    <div
+    <aside
       className={clsx(
-        "fixed inset-x-0 bottom-0 z-20 pointer-events-none",
+        "fixed z-50 pointer-events-auto",
+        landscape
+          ? "right-0 top-1/2 -translate-y-1/2 w-[min(40vw,520px)] h-[60vh]"
+          : "inset-x-0 bottom-0 w-full",
         className
       )}
       aria-label="Bottom controls"
+      style={landscape ? { right: rightSafe } : undefined}
     >
-      <div className="mx-auto w-[min(94vw,980px)] pointer-events-auto">
-        {/* the sheet */}
+      <div
+        className={clsx(
+          // outer shell: rounded, shadow, subtle ring
+          "overflow-hidden shadow-[0_10px_30px_rgba(92,15,20,0.18)] ring-1 ring-[#5c0f14]/10 rounded-l-2xl",
+          landscape
+            ? "h-full backdrop-blur-sm"
+            : "mx-auto w-[min(94vw,980px)] rounded-t-2xl backdrop-blur-sm"
+        )}
+      >
+        {/* heat stripes (no gradient) */}
+        <div aria-hidden className="leading-none">
+          <div className="h-[7px] bg-[#e19638]" /> {/* light */}
+          <div className="h-[7px] bg-[#b44427]" /> {/* mid   */}
+          <div className="h-[7px] bg-[#5c0f14]" /> {/* dark  */}
+        </div>
+
+        {/* paper body */}
         <div
           className={clsx(
-            "rounded-t-2xl border border-black/10 bg-white/80 backdrop-blur shadow-lg",
-            "px-3 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+12px)]",
-            "min-h-[25vh] flex flex-col gap-3"
+            "bg-[#f3ece4]/95",
+            landscape
+              ? "h-full px-3 pt-3 pb-3 overflow-y-auto"
+              : "px-3 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+12px)] min-h-[25vh]"
           )}
         >
-          {/* header row: search only */}
           <div className="flex items-center gap-2">
             <div className="flex-1 min-w-0">{children}</div>
           </div>
-
-          {/* spacer area — gives you visible space below the search box */}
           <div className="flex-1" />
         </div>
       </div>
-    </div>
+    </aside>
   );
 }

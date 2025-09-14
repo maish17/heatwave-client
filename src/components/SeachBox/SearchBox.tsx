@@ -3,17 +3,25 @@ import { useEffect, useRef, useState } from "react";
 import { forwardGeocode, type ForwardHit } from "../../lib/geocode";
 
 type Props = {
-  biasCenter?: [number, number] | (() => [number, number]);
-  onPick(hit: ForwardHit): void;
-  className?: string;
+  className?: string; // ✅ add this
+  value?: string;
+  onValueChange?: (v: string) => void;
+  biasCenter?: () => [number, number];
+  onPick: (hit: {
+    center: [number, number];
+    bbox?: [number, number, number, number];
+    label?: string;
+  }) => void;
 };
 
-export default function SeachBox({
+export default function SearchBox({
+  className = "",
+  value,
+  onValueChange,
   biasCenter,
   onPick,
-  className = "",
 }: Props) {
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(value ?? "");
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<ForwardHit[]>([]);
   const [open, setOpen] = useState(false);
@@ -23,9 +31,20 @@ export default function SeachBox({
   // Remember the last-selected label so we don't immediately refetch suggestions for it
   const selectedLabelRef = useRef<string | null>(null);
 
+  // keep internal q in sync with parent value
+  useEffect(() => {
+    if (value !== undefined && value !== q) {
+      setQ(value);
+      // suppress immediate re-search when parent programmatically sets a full label
+      selectedLabelRef.current = value;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
   const debounced = useDebounced(q, 300);
   const MIN_LEN = 3;
 
+  // fetch suggestions
   useEffect(() => {
     const query = debounced.trim();
 
@@ -52,7 +71,7 @@ export default function SeachBox({
         setLoading(true);
 
         const proximity =
-          typeof biasCenter === "function" ? biasCenter() : biasCenter;
+          typeof biasCenter === "function" ? biasCenter() : undefined;
 
         const opts: {
           proximity?: [number, number];
@@ -67,7 +86,7 @@ export default function SeachBox({
 
         if (import.meta.env.DEV) {
           const bySrc = hits.reduce<Record<string, number>>((acc, h) => {
-            const s = h.src ?? "unknown";
+            const s = (h as any).src ?? "unknown";
             acc[s] = (acc[s] ?? 0) + 1;
             return acc;
           }, {});
@@ -94,8 +113,11 @@ export default function SeachBox({
     if (!hit) return;
 
     // Fill the input with the chosen label and suppress immediate re-search
-    selectedLabelRef.current = hit.label;
-    setQ(hit.label);
+    selectedLabelRef.current = hit.label ?? null;
+    if (hit.label) {
+      setQ(hit.label);
+      onValueChange?.(hit.label);
+    }
     setResults([]);
     setOpen(false);
     setHighlight(0);
@@ -106,7 +128,9 @@ export default function SeachBox({
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     // If user edits after a selection, clear the selection sentinel so lookups resume
     if (selectedLabelRef.current) selectedLabelRef.current = null;
-    setQ(e.target.value);
+    const v = e.target.value;
+    setQ(v);
+    onValueChange?.(v);
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -132,9 +156,14 @@ export default function SeachBox({
         onChange={onChange}
         onFocus={() => q && results.length > 0 && setOpen(true)}
         onKeyDown={onKeyDown}
-        placeholder="Search address or place…"
-        className="w-[min(90vw,520px)] rounded-xl bg-white/90 px-4 py-2 text-[15px] shadow
-                   outline-none ring-1 ring-black/10 focus:ring-2 focus:ring-black/20"
+        placeholder="Where do you want to go?"
+        className="
+          w-full rounded-2xl bg-[#f8f1e7]
+          px-4 py-3 text-[#1B1E22]
+          placeholder:text-[#8b7d72]
+          ring-1 ring-[#5c0f14]/10 focus:ring-2 focus:ring-[#b44427]
+          shadow-inner shadow-black/5
+        "
       />
       {loading && (
         <div className="absolute right-2 top-2 text-xs text-gray-500">…</div>
@@ -142,8 +171,8 @@ export default function SeachBox({
 
       {open && results.length > 0 && (
         <div
-          className="absolute z-20 mt-2 max-h-[50vh] w-[min(90vw,520px)] overflow-auto
-                        rounded-xl border border-black/10 bg-white/95 shadow-lg backdrop-blur"
+          className="absolute z-20 mt-2 max-h-[50vh] w-full overflow-auto
+            rounded-xl border border-black/10 bg-white/95 shadow-lg backdrop-blur"
         >
           {results.map((r, i) => (
             <button
@@ -153,7 +182,7 @@ export default function SeachBox({
               className={`block w-full text-left px-3 py-2 text-[14px] hover:bg-black/5 ${
                 i === highlight ? "bg-black/5" : ""
               }`}
-              title={r.src ? `from ${r.src}` : undefined}
+              title={(r as any).src ? `from ${(r as any).src}` : undefined}
             >
               {r.label}
             </button>

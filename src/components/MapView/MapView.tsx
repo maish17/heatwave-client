@@ -8,6 +8,11 @@ import { routeBetween, type LngLat } from "../../lib/routing";
 import SearchBox from "../SeachBox/SearchBox";
 import BottomBar from "../BottomBar";
 import { Geolocation } from "@capacitor/geolocation";
+import NavPanel from "../NavPanel/NavPanel";
+import { snapToLine, lengthBetween } from "../../lib/nav";
+import type { RouteResult } from "../../lib/routing";
+import type { ExpressionSpecification } from "maplibre-gl";
+import { openInfo, INFO_URL } from "../../lib/openInfo";
 
 let pmtilesRegistered = false;
 
@@ -20,10 +25,10 @@ const FALLBACK_STYLE_URL = "https://demotiles.maplibre.org/style.json";
 const COLORS = {
   bg: "#E6D2BC",
   text: "#1B1E22",
-  heat2: "#B44427", // destination pin
-  coolPin: "#1FB5AD", // me pin
-  land: "#E6D2BC",
-  water: "#EFE8DC",
+  heat2: "#5c0f14", // destination pin
+  coolPin: "#e19638", //"#1FB5AD", // me pin
+  land: "#EEE3D5",
+  water: "#F7F2EA",
   greens: "#D1C9B0",
   bldg: "#E9D8C6",
   bldgLine: "#CDB79E",
@@ -35,9 +40,9 @@ const COLORS = {
 
   // Route styling
   routeHalo: "#ffffff",
-  routeFast: "#D0532B", // warmest
-  routeBalanced: "#0d6e69", // mid
-  routeCool: "#1FB5AD", // coolest
+  routeFast: "#5c0f14", //"#D0532B", // warmest
+  routeBalanced: "#b44427", //"#0d6e69", // mid
+  routeCool: "#e19638", //"#1FB5AD", // coolest
 };
 
 type View = { center: [number, number]; zoom: number };
@@ -53,6 +58,11 @@ const LYR_BAL_HALO = "hw-route-bal-halo";
 const LYR_BAL = "hw-route-bal";
 const LYR_COOL_HALO = "hw-route-cool-halo";
 const LYR_COOL = "hw-route-cool";
+
+/** Camera constants */
+const NAV_ZOOM = 18; // zoom when actively navigating (tight)
+const NAV_PITCH = 0; // top-down (no 3D)
+const PICKER_ZOOMOUT_DELTA = 0.15; // ~10–11% zoom-out in WebMercator terms
 
 /** geo helpers */
 function lineFeature(a: LngLat, b: LngLat) {
@@ -150,6 +160,23 @@ function fmtMiles(distanceM?: number) {
   return `${mi < 10 ? mi.toFixed(1) : Math.round(mi)} mi`;
 }
 
+// planar meters helpers for bearing/segment math
+const M_PER_DEG_LAT = 110_540;
+function M_PER_DEG_LON_AT(latDeg: number) {
+  return 111_320 * Math.cos((latDeg * Math.PI) / 180);
+}
+
+// “heading from A to B” in degrees, clockwise from north
+function bearingDeg(a: LngLat, b: LngLat) {
+  const midLat = (a[1] + b[1]) / 2;
+  const kx = M_PER_DEG_LON_AT(midLat),
+    ky = M_PER_DEG_LAT;
+  const dx = (b[0] - a[0]) * kx;
+  const dy = (b[1] - a[1]) * ky;
+  const rad = Math.atan2(dx, dy); // dx,dy so 0° is north, 90° is east
+  return (rad * 180) / Math.PI;
+}
+
 // ================= Component =================
 type TripStats = { durationSec: number; distanceM: number };
 type AllStats = Partial<Record<"fast" | "bal" | "cool", TripStats>>;
@@ -162,6 +189,31 @@ export default function MapView() {
   const popupRef = useRef<maplibregl.Popup | null>(null);
   const viewRef = useRef<View>(loadInitialView());
   const lastFixRef = useRef<LngLat | null>(null);
+  const routesRef = useRef<{
+    fast?: RouteResult;
+    bal?: RouteResult;
+    cool?: RouteResult;
+  }>({});
+
+  type NavState = {
+    profile: "fast" | "bal" | "cool";
+    route: RouteResult;
+    stepIndex: number;
+    startedAt: number;
+    offRouteSince?: number | null;
+    stepRemainingM?: number;
+    totalRemainingM?: number;
+  };
+  const [nav, _setNav] = useState<NavState | null>(null);
+  // MapView.tsx (top-level in component)
+  const [searchText, setSearchText] = useState("");
+
+  // keep latest nav in a ref so watchPosition sees fresh state
+  const navRef = useRef<NavState | null>(null);
+  function setNavNow(next: NavState | null) {
+    navRef.current = next;
+    _setNav(next);
+  }
 
   // routing state
   const routeDestRef = useRef<LngLat | null>(null);
@@ -468,9 +520,14 @@ export default function MapView() {
     map.addControl(
       new maplibregl.AttributionControl({
         compact: true,
-        customAttribution: "© OpenMapTiles © OpenStreetMap contributors",
+        customAttribution:
+          `© OpenMapTiles © OpenStreetMap contributors · ` +
+          `<a href="${INFO_URL}" target="_blank" rel="noopener" ` +
+          `onclick="if(window.__HW_OPEN_INFO__){event.preventDefault();window.__HW_OPEN_INFO__();}">` +
+          `About &amp; Legal</a>`,
       })
     );
+    positionAttribution();
 
     // Ensure route layers exist whenever a style is (re)loaded
     const ensureOnStyle = () => ensureRouteLayers(map);
@@ -491,21 +548,28 @@ export default function MapView() {
     map.on("zoomend", persist);
     map.on("idle", persist);
 
-    // reverse geocode on click
-    map.on("click", async (e) => {
+    // after map is created
+    map.on("contextmenu", async (e) => {
+      const dest: LngLat = [e.lngLat.lng, e.lngLat.lat];
+      routeDestRef.current = dest;
+      upsertDestMarker(dest);
+
+      // 👇 update the search bar text
       try {
-        const { label } = await reverseGeocode(
-          e.lngLat.lng,
-          e.lngLat.lat,
-          "en"
+        const { label } = await reverseGeocode(dest[0], dest[1], "en");
+        setSearchText(label);
+      } catch {
+        // fallback if reverse geocode hiccups
+        setSearchText(
+          `Dropped pin @ ${dest[1].toFixed(5)}, ${dest[0].toFixed(5)}`
         );
-        popupRef.current?.remove();
-        popupRef.current = new maplibregl.Popup({ closeOnMove: true })
-          .setLngLat(e.lngLat)
-          .setHTML(`<div style="max-width:260px">${escapeHtml(label)}</div>`)
-          .addTo(map);
-      } catch (err) {
-        console.warn("[reverse] failed:", err);
+      }
+
+      const me = getMePoint();
+      if (me) {
+        routeReadyRef.current = false;
+        computeAndRenderAllRoutes(me, dest);
+        fitToMeAndDest(dest);
       }
     });
 
@@ -552,6 +616,42 @@ export default function MapView() {
     };
   }, []);
 
+  useEffect(() => {
+    const update = () => positionAttribution();
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, []);
+
+  useEffect(() => {
+    // bar size changes when stats appear/disappear or when nav panel mounts
+    positionAttribution();
+  }, [stats, nav]);
+
+  useEffect(() => {
+    const onResize = () => {
+      if (!mapRef.current) return;
+      // If we’re previewing both pins, keep them in view with the new padding.
+      if (isPreviewing() && destMarkerRef.current) {
+        const d = destMarkerRef.current.getLngLat();
+        ensurePinsInView([d.lng, d.lat]);
+      }
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    (window as any).__HW_OPEN_INFO__ = openInfo;
+    return () => {
+      delete (window as any).__HW_OPEN_INFO__;
+    };
+  }, []);
+
   // ---------- helpers: destination + fitting ----------
   function upsertDestMarker(ll: LngLat) {
     const m = mapRef.current!;
@@ -564,6 +664,39 @@ export default function MapView() {
     }
   }
 
+  function positionAttribution() {
+    const mapEl = mapRef.current?.getContainer();
+    if (!mapEl) return;
+
+    const corner = mapEl.querySelector(
+      ".maplibregl-ctrl-bottom-right"
+    ) as HTMLElement | null;
+    if (!corner) return;
+
+    const portrait = window.innerHeight > window.innerWidth;
+
+    // Where's our bottom bar? (uses the aria-label already on BottomBar)
+    const bar = document.querySelector(
+      'aside[aria-label="Bottom controls"]'
+    ) as HTMLElement | null;
+
+    // If we can measure it, use real height; otherwise fall back to ~25vh
+    const barH =
+      bar?.getBoundingClientRect().height ??
+      Math.round(window.innerHeight * 0.25);
+
+    if (portrait) {
+      corner.style.right = "calc(env(safe-area-inset-right, 0px) + 8px)";
+      corner.style.bottom = `calc(${barH}px + env(safe-area-inset-bottom, 0px) + 12px)`;
+      corner.style.zIndex = "60"; // stay above map, below your sheet
+    } else {
+      // default placement in landscape
+      corner.style.right = "calc(env(safe-area-inset-right, 0px) + 8px)";
+      corner.style.bottom = "calc(env(safe-area-inset-bottom, 0px) + 8px)";
+      corner.style.zIndex = "";
+    }
+  }
+
   function getMePoint(): LngLat | null {
     if (meMarkerRef.current) {
       const l = meMarkerRef.current.getLngLat();
@@ -572,9 +705,24 @@ export default function MapView() {
     return lastFixRef.current ?? null;
   }
 
-  function bottomPaddingPx() {
-    if (typeof window === "undefined") return 160;
-    return Math.round(window.innerHeight * 0.25) + 60; // 25% bar + cushion
+  function mapPadding() {
+    // base padding around the other sides
+    const BASE = 60;
+
+    if (typeof window === "undefined") {
+      return { top: BASE, right: BASE, bottom: 160, left: BASE };
+    }
+
+    const landscape = window.innerWidth >= window.innerHeight;
+
+    // use ~25% of the relevant axis + a little cushion (matches your bar sizing)
+    if (landscape) {
+      const right = Math.round(window.innerWidth * 0.25) + BASE;
+      return { top: BASE, right, bottom: BASE, left: BASE };
+    } else {
+      const bottom = Math.round(window.innerHeight * 0.25) + BASE;
+      return { top: BASE, right: BASE, bottom, left: BASE };
+    }
   }
 
   function fitToMeAndDest(dest: LngLat) {
@@ -588,7 +736,7 @@ export default function MapView() {
     b.extend(me);
     m.fitBounds(b, {
       duration: 700,
-      padding: { top: 60, right: 60, bottom: bottomPaddingPx(), left: 60 },
+      padding: mapPadding(),
       maxZoom: 17,
     });
   }
@@ -599,7 +747,7 @@ export default function MapView() {
     const me = getMePoint();
     if (!me) return;
 
-    const pad = { top: 60, right: 60, bottom: bottomPaddingPx(), left: 60 };
+    const pad = mapPadding();
     const size = m.getContainer().getBoundingClientRect();
     const pxMe = m.project({ lng: me[0], lat: me[1] });
     const pxDest = m.project({ lng: dest[0], lat: dest[1] });
@@ -615,6 +763,31 @@ export default function MapView() {
     }
   }
 
+  function railWidthAtZoom(z: number) {
+    // 10→3.0, 14→5.0, 18→8.0
+    if (z <= 10) return 3.0;
+    if (z >= 18) return 8.0;
+    if (z <= 14) return 3.0 + (5.0 - 3.0) * ((z - 10) / 4);
+    return 5.0 + (8.0 - 5.0) * ((z - 14) / 4);
+  }
+  function offsetAtZoom(z: number) {
+    // 10→2.2, 14→3.4, 18→5.0
+    if (z <= 10) return 2.2;
+    if (z >= 18) return 5.0;
+    if (z <= 14) return 2.2 + (3.4 - 2.2) * ((z - 10) / 4);
+    return 3.4 + (5.0 - 3.4) * ((z - 14) / 4);
+  }
+
+  // Count which routes are present overall (used for centering pairs)
+  function activeKinds() {
+    const r = routesRef.current;
+    const a: ("fast" | "bal" | "cool")[] = [];
+    if (r.fast) a.push("fast");
+    if (r.bal) a.push("bal");
+    if (r.cool) a.push("cool");
+    return a;
+  }
+
   // ---------- Route layer helpers (3 parallel routes) ----------
   function ensureRouteLayers(map: maplibregl.Map) {
     const addSrc = (id: string) => {
@@ -626,68 +799,99 @@ export default function MapView() {
         } as any);
       }
     };
-    const addLinePair = (
-      haloId: string,
-      lineId: string,
-      srcId: string,
-      color: string
-    ) => {
-      if (!map.getLayer(haloId)) {
-        map.addLayer({
-          id: haloId,
-          type: "line",
-          source: srcId,
-          layout: { "line-cap": "round", "line-join": "round" },
-          paint: {
-            "line-color": COLORS.routeHalo,
-            "line-width": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-              10,
-              5.0,
-              14,
-              8.0,
-              18,
-              12.0,
-            ],
-            "line-opacity": 0.9,
-          },
-        });
-      }
-      if (!map.getLayer(lineId)) {
-        map.addLayer({
-          id: lineId,
-          type: "line",
-          source: srcId,
-          layout: { "line-cap": "round", "line-join": "round" },
-          paint: {
-            "line-color": color,
-            "line-width": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-              10,
-              3.0,
-              14,
-              5.0,
-              18,
-              8.0,
-            ],
-            "line-opacity": 0.95,
-          },
-        });
-      }
-    };
+
+    // width scales with zoom
+    const LINE_WIDTH_EXPR = [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      10,
+      3.0,
+      14,
+      5.0,
+      18,
+      8.0,
+    ] as any;
+
+    // small halo around each rail
+    const HALO_WIDTH_EXPR = ["+", LINE_WIDTH_EXPR, 2] as any;
+
+    // IMPORTANT: define offset for each side explicitly (no ["*", -1, ...])
+    const OFFSET_POS = [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      10,
+      2.2,
+      14,
+      3.4,
+      18,
+      5.0,
+    ] as any;
+    const OFFSET_NEG = [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      10,
+      -2.2,
+      14,
+      -3.4,
+      18,
+      -5.0,
+    ] as any;
 
     addSrc(SRC_FAST);
     addSrc(SRC_BAL);
     addSrc(SRC_COOL);
 
-    // Draw order: halo then line, and put "cool" on top so it stays visible
-    addLinePair(LYR_FAST_HALO, LYR_FAST, SRC_FAST, COLORS.routeFast);
-    addLinePair(LYR_BAL_HALO, LYR_BAL, SRC_BAL, COLORS.routeBalanced);
-    addLinePair(LYR_COOL_HALO, LYR_COOL, SRC_COOL, COLORS.routeCool);
+    // --- halos first (so rails render on top) ---
+    const addHalo = (id: string, srcId: string, offsetExpr: any) => {
+      if (!map.getLayer(id)) {
+        map.addLayer({
+          id,
+          type: "line",
+          source: srcId,
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": COLORS.routeHalo,
+            "line-width": HALO_WIDTH_EXPR,
+            "line-opacity": 0.8,
+            "line-offset": offsetExpr,
+          },
+        });
+      }
+    };
+
+    addHalo(LYR_FAST_HALO, SRC_FAST, OFFSET_NEG); // left
+    addHalo(LYR_BAL_HALO, SRC_BAL, 0); // center
+    addHalo(LYR_COOL_HALO, SRC_COOL, OFFSET_POS); // right
+
+    // --- colored rails ---
+    const addRail = (
+      id: string,
+      srcId: string,
+      color: string,
+      offsetExpr: any
+    ) => {
+      if (!map.getLayer(id)) {
+        map.addLayer({
+          id,
+          type: "line",
+          source: srcId,
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": color,
+            "line-width": LINE_WIDTH_EXPR,
+            "line-opacity": 0.98,
+            "line-offset": offsetExpr,
+          },
+        });
+      }
+    };
+
+    addRail(LYR_FAST, SRC_FAST, COLORS.routeFast, OFFSET_NEG); // left
+    addRail(LYR_BAL, SRC_BAL, COLORS.routeBalanced, 0); // center
+    addRail(LYR_COOL, SRC_COOL, COLORS.routeCool, OFFSET_POS); // right
   }
 
   function setRouteGeometry(srcId: string, feature: any) {
@@ -695,7 +899,6 @@ export default function MapView() {
     if (!m) return;
     const src = m.getSource(srcId) as maplibregl.GeoJSONSource;
     if (!src) return;
-
     src.setData({
       type: "FeatureCollection",
       features: feature ? [feature] : [],
@@ -725,6 +928,168 @@ export default function MapView() {
     });
   }
 
+  // hide/show helpers for routes: keep only one visible
+  function showOnlyRoute(kind: "fast" | "bal" | "cool") {
+    if (kind !== "fast") setRouteGeometry(SRC_FAST, null as any);
+    if (kind !== "bal") setRouteGeometry(SRC_BAL, null as any);
+    if (kind !== "cool") setRouteGeometry(SRC_COOL, null as any);
+  }
+
+  function startNav(kind: "fast" | "bal" | "cool") {
+    const route = routesRef.current[kind];
+    if (!route || !mapRef.current) return;
+
+    // keep only the chosen line on the map
+    showOnlyRoute(kind);
+
+    // enter nav state
+    setNavNow({
+      profile: kind,
+      route,
+      stepIndex: 0,
+      startedAt: Date.now(),
+      offRouteSince: null,
+      stepRemainingM: route.instructions?.[0]?.distance ?? route.distance, // seed
+      totalRemainingM: route.distance,
+    });
+
+    // snap camera to you, top-down, tight zoom
+    const here = getMePoint();
+    if (here) {
+      mapRef.current.easeTo({
+        center: { lng: here[0], lat: here[1] },
+        zoom: NAV_ZOOM,
+        pitch: NAV_PITCH,
+        duration: 600,
+      });
+    } else {
+      mapRef.current.easeTo({
+        zoom: NAV_ZOOM,
+        pitch: NAV_PITCH,
+        duration: 600,
+      });
+    }
+  }
+
+  function endNav() {
+    setNavNow(null);
+    clearAllRoutes();
+    setStats(null);
+    routeDestRef.current = null;
+    destMarkerRef.current?.remove();
+    destMarkerRef.current = null;
+  }
+
+  // thresholds for reroute
+  const OFF_ROUTE_M = 40;
+  const OFF_ROUTE_SECS = 6;
+  const REROUTE_COOLDOWN_MS = 12_000;
+  let lastRerouteAt = 0;
+
+  function onNavTick(here: LngLat) {
+    const nav = navRef.current;
+    if (!nav) return;
+
+    // snap to current line
+    const snapped = snapToLine(nav.route.geometry, here);
+    const off = snapped.offDistM;
+
+    // off-route tracking
+    if (off > OFF_ROUTE_M) {
+      if (!nav.offRouteSince) {
+        setNavNow({ ...nav, offRouteSince: Date.now() });
+      } else if (
+        Date.now() - nav.offRouteSince! > OFF_ROUTE_SECS * 1000 &&
+        Date.now() - lastRerouteAt > REROUTE_COOLDOWN_MS
+      ) {
+        lastRerouteAt = Date.now();
+        const dest = nav.route.waypoints[1];
+        routeBetween(here, dest, {
+          ghProfile:
+            nav.profile === "fast"
+              ? "foot_fastest"
+              : nav.profile === "bal"
+              ? "foot_balanced"
+              : "foot_coolest",
+        })
+          .then((next) => {
+            routesRef.current[nav.profile] = next;
+            setRouteGeometry(
+              nav.profile === "fast"
+                ? SRC_FAST
+                : nav.profile === "bal"
+                ? SRC_BAL
+                : SRC_COOL,
+              next.geometry
+            );
+            setNavNow({
+              profile: nav.profile,
+              route: next,
+              stepIndex: 0,
+              startedAt: Date.now(),
+              offRouteSince: null,
+            });
+          })
+          .catch(() => {});
+      }
+    } else if (nav.offRouteSince) {
+      setNavNow({ ...nav, offRouteSince: null });
+    }
+
+    // step advancement + live distances
+    const steps = nav.route.instructions ?? [];
+    if (!steps.length) return;
+
+    const coords = nav.route.geometry.geometry.coordinates as [
+      number,
+      number
+    ][];
+    const idx = Math.max(0, nav.stepIndex);
+    const cur = steps[idx];
+    if (!cur || !Array.isArray(cur.interval)) return; // safety
+
+    const endVertex = Math.min(
+      coords.length - 1,
+      Math.max(0, cur.interval[1] ?? snapped.nextIndex)
+    );
+
+    // meters from snapped point to the next vertex (if it exists)
+    let extra = 0;
+    if (snapped.nextIndex < coords.length) {
+      const nextC = coords[snapped.nextIndex];
+      if (nextC) {
+        const c = snapped.closest as [number, number];
+        extra = Math.hypot(
+          (nextC[0] - c[0]) * M_PER_DEG_LON_AT((nextC[1] + c[1]) / 2),
+          (nextC[1] - c[1]) * M_PER_DEG_LAT
+        );
+      }
+    }
+
+    const mToEnd = Math.max(
+      0,
+      lengthBetween(coords, Math.min(snapped.nextIndex, endVertex), endVertex) +
+        extra
+    );
+
+    const totalRemainingM = Math.max(
+      0,
+      (nav.route.distance ?? 0) - snapped.traveledM
+    ); // push live values even if we don't change stepIndex
+
+    // push live values even if we don't change stepIndex
+    _setNav((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, stepRemainingM: mToEnd, totalRemainingM };
+      navRef.current = updated;
+      return updated;
+    });
+
+    if (mToEnd < 12 && idx < steps.length - 1) {
+      setNavNow({ ...nav, stepIndex: idx + 1 });
+    }
+  }
+
   async function computeAndRenderAllRoutes(from: LngLat, to: LngLat) {
     try {
       const [fast, bal, cool] = await Promise.allSettled([
@@ -736,21 +1101,27 @@ export default function MapView() {
       // update map geometries
       if (fast.status === "fulfilled") {
         setRouteGeometry(SRC_FAST, fast.value.geometry);
+        routesRef.current.fast = fast.value;
       } else {
         console.warn("[route fast] fallback:", fast.reason);
         setRouteGeometry(SRC_FAST, lineFeature(from, to));
+        delete routesRef.current.fast;
       }
       if (bal.status === "fulfilled") {
+        routesRef.current.bal = bal.value;
         setRouteGeometry(SRC_BAL, bal.value.geometry);
       } else {
         console.warn("[route balanced] fallback:", bal.reason);
         setRouteGeometry(SRC_BAL, lineFeature(from, to));
+        delete routesRef.current.bal;
       }
       if (cool.status === "fulfilled") {
         setRouteGeometry(SRC_COOL, cool.value.geometry);
+        routesRef.current.cool = cool.value;
       } else {
         console.warn("[route cool] fallback:", cool.reason);
         setRouteGeometry(SRC_COOL, lineFeature(from, to));
+        delete routesRef.current.cool;
       }
 
       // Build stats for the UI
@@ -791,6 +1162,11 @@ export default function MapView() {
     }
   }
 
+  // Are we previewing routes (dest picked) but not actively navigating?
+  function isPreviewing() {
+    return !!routeDestRef.current && !navRef.current;
+  }
+
   // ---------- follow mode (always on) ----------
   async function startFollowing(zoomOnFirstFix = false) {
     const m = mapRef.current!;
@@ -810,38 +1186,72 @@ export default function MapView() {
         } else {
           meMarkerRef.current.setLngLat(here);
         }
+
+        // update nav computations first
+        onNavTick(here);
         lastFixRef.current = here;
 
         if (routeDestRef.current && !routeReadyRef.current) {
           computeAndRenderAllRoutes(here, routeDestRef.current);
         }
 
-        if (destMarkerRef.current) {
-          const d = destMarkerRef.current.getLngLat();
+        // Camera: course-up when in nav, otherwise normal follow
+        // Camera behavior
+        const navCur = navRef.current;
+
+        if (navCur && mapRef.current) {
+          // === EN-ROUTE (course-up, tight zoom, top-down) ===
+          const snapped = snapToLine(navCur.route.geometry, here);
+          const coords = navCur.route.geometry.geometry.coordinates as [
+            number,
+            number
+          ][];
+          const ahead = coords[Math.min(coords.length - 1, snapped.nextIndex)];
+          const brg = ahead
+            ? bearingDeg(here, ahead)
+            : mapRef.current.getBearing();
+
+          mapRef.current.easeTo({
+            center: here,
+            zoom: NAV_ZOOM,
+            pitch: NAV_PITCH, // top-down
+            bearing: brg, // "way to go" faces up
+            duration: 400,
+          });
+        } else if (isPreviewing() && mapRef.current) {
+          // === PREVIEW/CHOOSER (both pins, all 3 routes, north-up, slightly zoomed out) ===
+          const d = destMarkerRef.current!.getLngLat();
           ensurePinsInView([d.lng, d.lat]);
           return;
-        }
+        } else {
+          // === NORMAL FOLLOW (no destination yet) ===
+          if (destMarkerRef.current) {
+            const d = destMarkerRef.current.getLngLat();
+            ensurePinsInView([d.lng, d.lat]);
+            return;
+          }
 
-        if (!gotFirstFix) {
-          gotFirstFix = true;
-          const z = Math.max(15, m.getZoom());
-          m.easeTo({
-            center: here,
-            zoom: zoomOnFirstFix ? z : m.getZoom(),
-            duration: 600,
-          });
-          lastForRecenter = here;
-          return;
-        }
+          if (!gotFirstFix) {
+            gotFirstFix = true;
+            const z = Math.max(15, m.getZoom());
+            m.easeTo({
+              center: here,
+              zoom: zoomOnFirstFix ? z : m.getZoom(),
+              duration: 600,
+            });
+            lastForRecenter = here;
+            return;
+          }
 
-        if (!lastForRecenter || distMeters(lastForRecenter, here) >= 3) {
-          m.easeTo({
-            center: here,
-            duration: 400,
-            bearing: m.getBearing(),
-            pitch: m.getPitch(),
-          });
-          lastForRecenter = here;
+          if (!lastForRecenter || distMeters(lastForRecenter, here) >= 3) {
+            m.easeTo({
+              center: here,
+              duration: 400,
+              bearing: m.getBearing(),
+              pitch: m.getPitch(),
+            });
+            lastForRecenter = here;
+          }
         }
       }
     );
@@ -869,8 +1279,32 @@ export default function MapView() {
       setStats(null);
     }
 
+    // Fit both pins, then zoom out ~10% for a nicer chooser view
     fitToMeAndDest(dest);
+    // After bounds fit, ensure preview is north-up & a touch more zoomed out
+    m.once("moveend", () => {
+      // still in preview (no active nav)?
+      if (!navRef.current) {
+        m.easeTo({
+          zoom: Math.max(0, m.getZoom() - PICKER_ZOOMOUT_DELTA), // ~10% more zoomed out
+          bearing: 0,
+          pitch: NAV_PITCH,
+          duration: 300,
+        });
+      }
+    });
   };
+
+  const metrics = navRef.current
+    ? {
+        ...(navRef.current.stepRemainingM != null
+          ? { stepRemainingM: navRef.current.stepRemainingM }
+          : {}),
+        ...(navRef.current.totalRemainingM != null
+          ? { totalRemainingM: navRef.current.totalRemainingM }
+          : {}),
+      }
+    : {};
 
   // ---------- render ----------
   return (
@@ -881,101 +1315,141 @@ export default function MapView() {
       {/* Bottom bar (search + route chooser) */}
       <BottomBar>
         <div className="w-full">
-          <SearchBox
-            biasCenter={() => viewRef.current.center}
-            onPick={goToHit}
-          />
+          {navRef.current ? (
+            <NavPanel
+              route={navRef.current.route}
+              stepIndex={navRef.current.stepIndex}
+              startedAt={navRef.current.startedAt}
+              {...metrics}
+              onEnd={endNav}
+            />
+          ) : (
+            <>
+              <SearchBox
+                biasCenter={() => viewRef.current.center}
+                onPick={goToHit}
+                value={searchText}
+                onValueChange={setSearchText}
+              />
 
-          {/* 3-option route chooser (hidden until a place is selected) */}
-          {stats && (
-            <div className="mt-3 flex flex-col gap-2">
-              {/* FASTEST */}
-              <div className="flex items-center justify-between rounded-xl border border-black/10 bg-white/90 px-3 py-2 shadow-sm">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span
-                    className="inline-block h-3 w-3 rounded-full"
-                    style={{ backgroundColor: COLORS.routeFast }}
-                    aria-hidden
-                  />
-                  <span className="text-sm font-medium text-gray-800">
-                    Fastest
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm tabular-nums text-gray-700">
-                    {fmtDurationHM(
-                      stats.fast?.durationSec,
-                      stats.fast?.distanceM
-                    )}{" "}
-                    · {fmtMiles(stats.fast?.distanceM)}
-                  </span>
-                  <button
-                    className="rounded-lg bg-black/80 px-3 py-1 text-sm text-white hover:bg-black"
-                    onClick={() => console.log("select fastest")}
+              {stats && (
+                <div className="mt-3 flex flex-col gap-2">
+                  {/* FASTEST */}
+                  <div
+                    className="group flex items-center justify-between gap-3 rounded-xl
+                    ring-1 ring-[#5c0f14]/10 bg-[#fffaf3] hover:bg-[#fff6ea]
+                    px-3 py-2 shadow-[0_1px_0_#ffffff_inset,0_2px_10px_rgba(92,15,20,0.10)]"
                   >
-                    Select
-                  </button>
-                </div>
-              </div>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span
+                        className="h-7 w-1.5 rounded-full"
+                        style={{
+                          backgroundColor: COLORS.routeFast,
+                          opacity: 0.9,
+                        }}
+                      />
+                      <span className="text-sm font-medium text-[#3a2b24]">
+                        Fastest
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm tabular-nums text-[#4a4039]">
+                        {fmtDurationHM(
+                          stats.fast?.durationSec,
+                          stats.fast?.distanceM
+                        )}{" "}
+                        · {fmtMiles(stats.fast?.distanceM)}
+                      </span>
+                      <button
+                        className="rounded-lg bg-[#5c0f14] hover:bg-[#451016] text-white px-3 py-2
+                     shadow-[0_1px_0_rgba(255,255,255,0.2)_inset,0_2px_6px_rgba(92,15,20,0.25)]
+                     focus:outline-none focus:ring-2 focus:ring-offset-2
+                     focus:ring-[#b44427] focus:ring-offset-[#f3ece4]"
+                        onClick={() => startNav("fast")}
+                      >
+                        Start
+                      </button>
+                    </div>
+                  </div>
 
-              {/* BALANCED */}
-              <div className="flex items-center justify-between rounded-xl border border-black/10 bg-white/90 px-3 py-2 shadow-sm">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span
-                    className="inline-block h-3 w-3 rounded-full"
-                    style={{ backgroundColor: COLORS.routeBalanced }}
-                    aria-hidden
-                  />
-                  <span className="text-sm font-medium text-gray-800">
-                    Balanced
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm tabular-nums text-gray-700">
-                    {fmtDurationHM(
-                      stats.bal?.durationSec,
-                      stats.bal?.distanceM
-                    )}{" "}
-                    · {fmtMiles(stats.bal?.distanceM)}
-                  </span>
-                  <button
-                    className="rounded-lg bg-black/80 px-3 py-1 text-sm text-white hover:bg-black"
-                    onClick={() => console.log("select balanced")}
+                  {/* BALANCED */}
+                  <div
+                    className="group flex items-center justify-between gap-3 rounded-xl
+                    ring-1 ring-[#5c0f14]/10 bg-[#fffaf3] hover:bg-[#fff6ea]
+                    px-3 py-2 shadow-[0_1px_0_#ffffff_inset,0_2px_10px_rgba(92,15,20,0.10)]"
                   >
-                    Select
-                  </button>
-                </div>
-              </div>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span
+                        className="h-7 w-1.5 rounded-full"
+                        style={{
+                          backgroundColor: COLORS.routeBalanced,
+                          opacity: 0.9,
+                        }}
+                      />
+                      <span className="text-sm font-medium text-[#3a2b24]">
+                        Balanced
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm tabular-nums text-[#4a4039]">
+                        {fmtDurationHM(
+                          stats.bal?.durationSec,
+                          stats.bal?.distanceM
+                        )}{" "}
+                        · {fmtMiles(stats.bal?.distanceM)}
+                      </span>
+                      <button
+                        className="rounded-lg bg-[#5c0f14] hover:bg-[#451016] text-white px-3 py-2
+                     shadow-[0_1px_0_rgba(255,255,255,0.2)_inset,0_2px_6px_rgba(92,15,20,0.25)]
+                     focus:outline-none focus:ring-2 focus:ring-offset-2
+                     focus:ring-[#b44427] focus:ring-offset-[#f3ece4]"
+                        onClick={() => startNav("bal")}
+                      >
+                        Start
+                      </button>
+                    </div>
+                  </div>
 
-              {/* COOLEST */}
-              <div className="flex items-center justify-between rounded-xl border border-black/10 bg-white/90 px-3 py-2 shadow-sm">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span
-                    className="inline-block h-3 w-3 rounded-full"
-                    style={{ backgroundColor: COLORS.routeCool }}
-                    aria-hidden
-                  />
-                  <span className="text-sm font-medium text-gray-800">
-                    Coolest
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm tabular-nums text-gray-700">
-                    {fmtDurationHM(
-                      stats.cool?.durationSec,
-                      stats.cool?.distanceM
-                    )}{" "}
-                    · {fmtMiles(stats.cool?.distanceM)}
-                  </span>
-                  <button
-                    className="rounded-lg bg-black/80 px-3 py-1 text-sm text-white hover:bg-black"
-                    onClick={() => console.log("select coolest")}
+                  {/* COOLEST */}
+                  <div
+                    className="group flex items-center justify-between gap-3 rounded-xl
+                    ring-1 ring-[#5c0f14]/10 bg-[#fffaf3] hover:bg-[#fff6ea]
+                    px-3 py-2 shadow-[0_1px_0_#ffffff_inset,0_2px_10px_rgba(92,15,20,0.10)]"
                   >
-                    Select
-                  </button>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span
+                        className="h-7 w-1.5 rounded-full"
+                        style={{
+                          backgroundColor: COLORS.routeCool,
+                          opacity: 0.9,
+                        }}
+                      />
+                      <span className="text-sm font-medium text-[#3a2b24]">
+                        Coolest
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm tabular-nums text-[#4a4039]">
+                        {fmtDurationHM(
+                          stats.cool?.durationSec,
+                          stats.cool?.distanceM
+                        )}{" "}
+                        · {fmtMiles(stats.cool?.distanceM)}
+                      </span>
+                      <button
+                        className="rounded-lg bg-[#5c0f14] hover:bg-[#451016] text-white px-3 py-2
+                     shadow-[0_1px_0_rgba(255,255,255,0.2)_inset,0_2px_6px_rgba(92,15,20,0.25)]
+                     focus:outline-none focus:ring-2 focus:ring-offset-2
+                     focus:ring-[#b44427] focus:ring-offset-[#f3ece4]"
+                        onClick={() => startNav("cool")}
+                      >
+                        Start
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              )}
+            </>
           )}
         </div>
       </BottomBar>
