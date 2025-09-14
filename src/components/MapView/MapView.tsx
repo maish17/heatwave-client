@@ -209,6 +209,27 @@ export default function MapView() {
   // MapView.tsx (top-level in component)
   const [searchText, setSearchText] = useState("");
 
+  const [needsLocation, setNeedsLocation] = useState(false);
+
+  const requestLocation = () => {
+    // Trigger the browser prompt via a user gesture
+    if (!("geolocation" in navigator)) return;
+    navigator.geolocation.getCurrentPosition(
+      () => {
+        setNeedsLocation(false);
+        startFollowing(true);
+      },
+      (err) => {
+        console.warn("[geo] getCurrentPosition error:", err);
+        setNeedsLocation(true);
+        alert(
+          "Location permission is blocked. In Safari, tap the aA button → Website Settings → Location: Allow and turn on Precise Location."
+        );
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+    );
+  };
+
   // keep latest nav in a ref so watchPosition sees fresh state
   const navRef = useRef<NavState | null>(null);
   function setNavNow(next: NavState | null) {
@@ -576,17 +597,16 @@ export default function MapView() {
 
     mapRef.current = map;
 
-    // follow is ALWAYS on
+    // follow is ALWAYS on — native vs web (iOS Safari needs a user tap)
     (async () => {
       try {
         if (Capacitor.isNativePlatform()) {
-          // === Android/iOS (Capacitor runtime) ===
+          // Native (Android/iOS app)
           const status = await Geolocation.checkPermissions();
           let state =
             (status as any).location ??
             (status as any).coarseLocation ??
             (status as any).locationWhenInUse;
-
           if (state !== "granted") {
             const req = await Geolocation.requestPermissions();
             state =
@@ -594,44 +614,38 @@ export default function MapView() {
               (req as any).coarseLocation ??
               (req as any).locationWhenInUse;
           }
-
           if (state === "granted") {
-            // iOS can still delay the first fix until we call getCurrentPosition once.
-            try {
-              await Geolocation.getCurrentPosition({
-                enableHighAccuracy: true,
-                timeout: 10000,
-              });
-            } catch {}
             await startFollowing(true);
           } else {
-            console.warn("[geo] native permission not granted:", state);
+            console.warn("[geo] location permission not granted (native)");
           }
         } else {
-          // === Web (heatwaves.app) ===
-          // Trigger the real browser permission prompt explicitly.
-          const promptOnce = () =>
-            new Promise<void>((resolve, reject) => {
-              if (!("geolocation" in navigator)) {
-                reject(new Error("navigator.geolocation not available"));
-                return;
-              }
-              navigator.geolocation.getCurrentPosition(
-                () => resolve(),
-                (err) => reject(err),
-                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-              );
-            });
+          // Web (Safari/Chrome on iPhone): show a tap-to-enable if not already granted
+          if (!("geolocation" in navigator)) {
+            console.warn("[geo] navigator.geolocation not available");
+            return;
+          }
 
           try {
-            await promptOnce(); // shows the browser permission dialog
-            await startFollowing(true);
-          } catch (err) {
-            console.warn("[geo] browser geolocation denied/failed:", err);
+            const perms = (navigator as any).permissions
+              ? await (navigator as any).permissions.query({
+                  name: "geolocation" as any,
+                })
+              : null;
+
+            if (perms?.state === "granted") {
+              startFollowing(true);
+            } else {
+              // iOS Safari often needs a user gesture to show the prompt
+              setNeedsLocation(true);
+            }
+          } catch {
+            // Safari doesn't support Permissions API — require a tap
+            setNeedsLocation(true);
           }
         }
       } catch (e) {
-        console.warn("[geo] permission error:", e);
+        console.warn("[geo] init error:", e);
       }
     })();
 
@@ -651,8 +665,12 @@ export default function MapView() {
     };
   }, []);
 
+  const [, forceUIRerender] = useState(0);
   useEffect(() => {
-    const update = () => positionAttribution();
+    const update = () => {
+      positionAttribution();
+      forceUIRerender((x) => x + 1); // recompute overlay offsets
+    };
     update();
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
@@ -663,8 +681,8 @@ export default function MapView() {
   }, []);
 
   useEffect(() => {
-    // bar size changes when stats appear/disappear or when nav panel mounts
     positionAttribution();
+    forceUIRerender((x) => x + 1);
   }, [stats, nav]);
 
   useEffect(() => {
@@ -699,6 +717,27 @@ export default function MapView() {
     }
   }
 
+  function overlayOffsetsBottomLeft() {
+    if (typeof window === "undefined") {
+      return { left: "12px", bottom: "12px" };
+    }
+    const portrait = window.innerHeight > window.innerWidth;
+    const bar = document.querySelector(
+      'aside[aria-label="Bottom controls"]'
+    ) as HTMLElement | null;
+
+    const barH =
+      bar?.getBoundingClientRect().height ??
+      Math.round(window.innerHeight * 0.25);
+
+    return {
+      left: "calc(env(safe-area-inset-left, 0px) + 12px)",
+      bottom: portrait
+        ? `calc(${barH}px + env(safe-area-inset-bottom, 0px) + 12px)`
+        : `calc(env(safe-area-inset-bottom, 0px) + 12px)`,
+    };
+  }
+
   function positionAttribution() {
     const mapEl = mapRef.current?.getContainer();
     if (!mapEl) return;
@@ -722,7 +761,7 @@ export default function MapView() {
 
     if (portrait) {
       corner.style.right = "calc(env(safe-area-inset-right, 0px) + 8px)";
-      corner.style.bottom = `calc(${barH}px + env(safe-area-inset-bottom, 0px) + 12px)`;
+      corner.style.bottom = `calc(${barH}px + env(safe-area-inset-bottom, 0px) + 25px)`;
       corner.style.zIndex = "60"; // stay above map, below your sheet
     } else {
       // default placement in landscape
@@ -1208,94 +1247,101 @@ export default function MapView() {
     let gotFirstFix = false;
     let lastForRecenter: LngLat | null = null;
 
-    await Geolocation.watchPosition(
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 },
-      (pos, err) => {
-        if (err) {
-          console.warn("[geo] watchPosition error:", err);
-          return;
-        }
-        if (!pos) return;
-        const here: LngLat = [pos.coords.longitude, pos.coords.latitude];
+    const onPosition = (pos: {
+      coords: { latitude: number; longitude: number };
+    }) => {
+      const here: LngLat = [pos.coords.longitude, pos.coords.latitude];
 
-        if (!meMarkerRef.current) {
-          meMarkerRef.current = new maplibregl.Marker({ color: COLORS.coolPin })
-            .setLngLat(here)
-            .addTo(m);
-        } else {
-          meMarkerRef.current.setLngLat(here);
-        }
+      if (!meMarkerRef.current) {
+        meMarkerRef.current = new maplibregl.Marker({ color: COLORS.coolPin })
+          .setLngLat(here)
+          .addTo(m);
+      } else {
+        meMarkerRef.current.setLngLat(here);
+      }
 
-        // update nav computations first
-        onNavTick(here);
-        lastFixRef.current = here;
+      // update nav computations first
+      onNavTick(here);
+      lastFixRef.current = here;
 
-        if (routeDestRef.current && !routeReadyRef.current) {
-          computeAndRenderAllRoutes(here, routeDestRef.current);
-        }
+      if (routeDestRef.current && !routeReadyRef.current) {
+        computeAndRenderAllRoutes(here, routeDestRef.current);
+      }
 
-        // Camera: course-up when in nav, otherwise normal follow
-        // Camera behavior
-        const navCur = navRef.current;
+      // Camera behavior
+      const navCur = navRef.current;
 
-        if (navCur && mapRef.current) {
-          // === EN-ROUTE (course-up, tight zoom, top-down) ===
-          const snapped = snapToLine(navCur.route.geometry, here);
-          const coords = navCur.route.geometry.geometry.coordinates as [
-            number,
-            number
-          ][];
-          const ahead = coords[Math.min(coords.length - 1, snapped.nextIndex)];
-          const brg = ahead
-            ? bearingDeg(here, ahead)
-            : mapRef.current.getBearing();
+      if (navCur && mapRef.current) {
+        const snapped = snapToLine(navCur.route.geometry, here);
+        const coords = navCur.route.geometry.geometry.coordinates as [
+          number,
+          number
+        ][];
+        const ahead = coords[Math.min(coords.length - 1, snapped.nextIndex)];
+        const brg = ahead
+          ? bearingDeg(here, ahead)
+          : mapRef.current.getBearing();
 
-          mapRef.current.easeTo({
-            center: here,
-            zoom: NAV_ZOOM,
-            pitch: NAV_PITCH, // top-down
-            bearing: brg, // "way to go" faces up
-            duration: 400,
-          });
-        } else if (isPreviewing() && mapRef.current) {
-          // === PREVIEW/CHOOSER (both pins, all 3 routes, north-up, slightly zoomed out) ===
-          const d = destMarkerRef.current!.getLngLat();
+        mapRef.current.easeTo({
+          center: here,
+          zoom: NAV_ZOOM,
+          pitch: NAV_PITCH,
+          bearing: brg,
+          duration: 400,
+        });
+      } else if (isPreviewing() && mapRef.current) {
+        const d = destMarkerRef.current!.getLngLat();
+        ensurePinsInView([d.lng, d.lat]);
+        return;
+      } else {
+        if (destMarkerRef.current) {
+          const d = destMarkerRef.current.getLngLat();
           ensurePinsInView([d.lng, d.lat]);
           return;
-        } else {
-          // === NORMAL FOLLOW (no destination yet) ===
-          if (destMarkerRef.current) {
-            const d = destMarkerRef.current.getLngLat();
-            ensurePinsInView([d.lng, d.lat]);
-            return;
-          }
+        }
 
-          if (!gotFirstFix) {
-            gotFirstFix = true;
-            const z = Math.max(15, m.getZoom());
-            m.easeTo({
-              center: here,
-              zoom: zoomOnFirstFix ? z : m.getZoom(),
-              duration: 600,
-            });
-            lastForRecenter = here;
-            return;
-          }
+        if (!gotFirstFix) {
+          gotFirstFix = true;
+          const z = Math.max(15, m.getZoom());
+          m.easeTo({
+            center: here,
+            zoom: zoomOnFirstFix ? z : m.getZoom(),
+            duration: 600,
+          });
+          lastForRecenter = here;
+          return;
+        }
 
-          if (!lastForRecenter || distMeters(lastForRecenter, here) >= 3) {
-            m.easeTo({
-              center: here,
-              duration: 400,
-              bearing: m.getBearing(),
-              pitch: m.getPitch(),
-            });
-            lastForRecenter = here;
-          }
+        if (!lastForRecenter || distMeters(lastForRecenter, here) >= 3) {
+          m.easeTo({
+            center: here,
+            duration: 400,
+            bearing: m.getBearing(),
+            pitch: m.getPitch(),
+          });
+          lastForRecenter = here;
         }
       }
-    );
-  }
+    };
 
+    const onError = (err: any) => {
+      console.warn("[geo] watch error:", err?.code, err?.message ?? err);
+      // If user denied, surface the button on web
+      if (!Capacitor.isNativePlatform()) setNeedsLocation(true);
+    };
+
+    const options = { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 };
+
+    if (Capacitor.isNativePlatform()) {
+      await Geolocation.watchPosition(options as any, (pos, err) => {
+        if (err || !pos) return onError(err);
+        onPosition(pos as any);
+      });
+    } else {
+      // Web watcher
+      navigator.geolocation.watchPosition(onPosition, onError, options);
+    }
+  }
   // ---------- called by SearchBox ----------
   const goToHit = (hit: {
     center: LngLat;
@@ -1348,6 +1394,18 @@ export default function MapView() {
   // ---------- render ----------
   return (
     <div className="relative w-full h-screen">
+      {/* Web-only “Enable location” chip (iOS Safari often needs a tap) */}
+      {!Capacitor.isNativePlatform() && needsLocation && (
+        <button
+          onClick={requestLocation}
+          style={overlayOffsetsBottomLeft()}
+          className="absolute z-[70] rounded-xl bg-[#5c0f14] text-white px-3 py-2 shadow
+               focus:outline-none focus:ring-2 focus:ring-[#b44427]"
+          aria-label="Enable location"
+        >
+          Enable location
+        </button>
+      )}
       {/* Map */}
       <div ref={divRef} className="w-full h-full" />
 
