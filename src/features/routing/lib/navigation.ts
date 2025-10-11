@@ -1,9 +1,7 @@
-// src/lib/nav.ts
 import type { Feature, LineString } from "geojson";
 
-export type Pt = [number, number]; // [lng, lat]
+export type Pt = [number, number];
 
-/** Haversine distance in meters */
 export function meters(a: Pt, b: Pt): number {
   const R = 6371000;
   const toRad = (x: number) => (x * Math.PI) / 180;
@@ -32,7 +30,6 @@ export function fmtEta(sec: number): string {
 }
 
 export function signToText(sign: number): string {
-  // Common GraphHopper signs
   switch (sign) {
     case 6:
     case -6:
@@ -62,14 +59,6 @@ export function signToText(sign: number): string {
   }
 }
 
-/**
- * Snap a point to a polyline.
- * Returns:
- *  - closest: snapped lon/lat
- *  - offDistM: meters off the line
- *  - nextIndex: index of the next vertex after the snapped point
- *  - traveledM: meters along the line up to the snapped point
- */
 export function snapToLine(
   line: Feature<LineString>,
   p: Pt
@@ -84,7 +73,6 @@ export function snapToLine(
     };
   }
 
-  // Planar projection factors using segment-midpoint latitude
   const M_PER_DEG_LAT = 110_540;
   const M_PER_DEG_LON_AT = (latDeg: number) =>
     111_320 * Math.cos((latDeg * Math.PI) / 180);
@@ -110,7 +98,7 @@ export function snapToLine(
 
     const abx = bx - ax,
       aby = by - ay;
-    const denom = abx * abx + aby * aby || 1; // avoid 0
+    const denom = abx * abx + aby * aby || 1;
     const t = Math.max(
       0,
       Math.min(1, ((px - ax) * abx + (py - ay) * aby) / denom)
@@ -123,7 +111,7 @@ export function snapToLine(
       best = {
         d,
         pt: [projx / kx, projy / ky],
-        idx: i + 1, // next vertex after projection
+        idx: i + 1,
         along: cum + segLen * t,
       };
     }
@@ -138,7 +126,6 @@ export function snapToLine(
   };
 }
 
-/** Safe length between vertex indices [i0, i1] (meters) */
 export function lengthBetween(coords: Pt[], i0: number, i1: number) {
   if (coords.length < 2) return 0;
   let start = Math.max(0, Math.min(i0, coords.length - 1));

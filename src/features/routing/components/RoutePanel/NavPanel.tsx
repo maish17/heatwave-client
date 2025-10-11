@@ -1,7 +1,7 @@
 // src/components/NavPanel/NavPanel.tsx
 import { useMemo } from "react";
-import type { RouteResult, GHInstruction } from "../../lib/routing";
-import { fmtDistImperial, fmtEta, signToText } from "../../lib/nav";
+import type { RouteResult, GHInstruction } from "../../api/routing.api";
+import { fmtDistImperial, fmtEta, signToText } from "../../lib/navigation";
 
 type Props = {
   route: RouteResult;

@@ -1,13 +1,15 @@
+// src/pages/InfoPage.tsx
 import { Link } from "react-router-dom";
 
+/** Local theme (mirrors your map palette) */
 const THEME = {
-  bg: "#F7F2EA",
+  bg: "#F7F2EA", // page background (your water)
   panel: "#FFFAF3",
   text: "#1B1E22",
   subtext: "#4a4039",
-  stripe1: "#e19638",
-  stripe2: "#b44427",
-  stripe3: "#5c0f14",
+  stripe1: "#e19638", // light (top)
+  stripe2: "#b44427", // mid
+  stripe3: "#5c0f14", // dark (bottom)
   link: "#b44427",
   linkHover: "#5c0f14",
   border: "rgba(92,15,20,0.12)",
@@ -38,6 +40,7 @@ function Section({
         className="text-2xl md:text-3xl mt-10 mb-4"
         style={{
           color: THEME.text,
+          // Apple Garamond for display if available
           fontFamily: '"Apple Garamond","Garamond",ui-serif,serif',
         }}
       >
@@ -63,6 +66,7 @@ export default function InfoPage() {
       style={{
         background: THEME.bg,
         color: THEME.text,
+        // IBM Plex Sans as body; falls back to system
         fontFamily:
           '"IBM Plex Sans","Segoe UI","Helvetica Neue",Arial,system-ui,-apple-system,sans-serif',
       }}

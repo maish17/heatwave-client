@@ -40,21 +40,20 @@ export default function BottomBar({ className = "", children }: Props) {
     >
       <div
         className={clsx(
-          // outer shell: rounded, shadow, subtle ring
           "overflow-hidden shadow-[0_10px_30px_rgba(92,15,20,0.18)] ring-1 ring-[#5c0f14]/10 rounded-l-2xl",
           landscape
             ? "h-full backdrop-blur-sm"
             : "mx-auto w-[min(94vw,980px)] rounded-t-2xl backdrop-blur-sm"
         )}
       >
-        {/* heat stripes (no gradient) */}
+        {}
         <div aria-hidden className="leading-none">
           <div className="h-[7px] bg-[#e19638]" /> {/* light */}
           <div className="h-[7px] bg-[#b44427]" /> {/* mid   */}
           <div className="h-[7px] bg-[#5c0f14]" /> {/* dark  */}
         </div>
 
-        {/* paper body */}
+        {}
         <div
           className={clsx(
             "bg-[#f3ece4]/95",

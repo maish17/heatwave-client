@@ -1,6 +1,6 @@
-// src/components/SeachBox/SearchBox.tsx
+// src/components/SearchBox/SearchBox.tsx
 import { useEffect, useRef, useState } from "react";
-import { forwardGeocode, type ForwardHit } from "../../lib/geocode";
+import { forwardGeocode, type ForwardHit } from "../../api/places.api";
 
 type Props = {
   className?: string;
@@ -87,11 +87,14 @@ export default function SearchBox({
         if (ctl.signal.aborted) return;
 
         if (import.meta.env.DEV) {
-          const bySrc = hits.reduce<Record<string, number>>((acc, h) => {
-            const s = (h as any).src ?? "unknown";
-            acc[s] = (acc[s] ?? 0) + 1;
-            return acc;
-          }, {});
+          const bySrc = hits.reduce<Record<string, number>>(
+            (acc: Record<string, number>, h: ForwardHit) => {
+              const s = (h as any).src ?? "unknown";
+              acc[s] = (acc[s] ?? 0) + 1;
+              return acc;
+            },
+            {}
+          );
           console.debug(`[SearchBox] "${query}" results:`, bySrc, hits[0]);
         }
 

@@ -1,27 +1,25 @@
-// src/lib/routing.ts
 import { Capacitor } from "@capacitor/core";
 import type { Feature, LineString } from "geojson";
 import type { CustomModel } from "./ghModels";
 
-/** Public types your UI already uses */
 export type LngLat = [number, number];
 
 export type GHInstruction = {
-  distance: number; // meters
-  time: number; // ms
-  text: string; // “Turn left onto …”
-  sign: number; // direction code
-  interval: [number, number]; // [fromVertex, toVertex] in the polyline
+  distance: number;
+  time: number;
+  text: string;
+  sign: number;
+  interval: [number, number];
   street_name?: string;
   last_heading?: number;
 };
 
 export type RouteResult = {
-  distance: number; // meters
-  duration: number; // seconds
+  distance: number;
+  duration: number;
   geometry: Feature<LineString>;
   waypoints: [LngLat, LngLat];
-  instructions?: GHInstruction[]; // <-- NEW
+  instructions?: GHInstruction[];
   raw: any;
 };
 
@@ -34,8 +32,6 @@ export type RouteOptions = {
   signal?: AbortSignal;
   timeoutMs?: number;
 };
-
-/* -------------------- Environment & defaults -------------------- */
 
 function normalizeBase(input?: string): string | undefined {
   if (!input) return undefined;
@@ -63,8 +59,6 @@ const GH_API_KEY =
   undefined;
 
 const DEFAULTS = { ghProfile: "foot_balanced" as const, timeoutMs: 12_000 };
-
-/* -------------------- Small in-memory cache -------------------- */
 
 const CACHE_TTL_MS = 30_000;
 type CacheKey = `${string}|${number},${number}|${number},${number}|${string}`;
@@ -131,8 +125,6 @@ function resolveGhProfile(
   return "foot_balanced";
 }
 
-/* -------------------- Core: GraphHopper call -------------------- */
-
 async function routeViaGraphHopper(
   from: LngLat,
   to: LngLat,
@@ -163,7 +155,7 @@ async function routeViaGraphHopper(
     profile,
     points,
     points_encoded: false,
-    instructions: true, // <-- ask for turn-by-turn
+    instructions: true,
     locale: "en",
   };
 
@@ -246,15 +238,13 @@ async function routeViaGraphHopper(
 
   return {
     distance: Number(path.distance) || 0,
-    duration: (Number(path.time) || 0) / 1000, // ms -> s
+    duration: (Number(path.time) || 0) / 1000,
     geometry: feature,
     waypoints: [from, to],
     instructions,
     raw: data,
   };
 }
-
-/* -------------------- Public entry point -------------------- */
 
 export async function routeBetween(
   from: LngLat,

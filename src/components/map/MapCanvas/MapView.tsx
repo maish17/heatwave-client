@@ -1,33 +1,36 @@
-// src/components/MapView/MapView.tsx
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Protocol, PMTiles } from "pmtiles";
-import { reverseGeocode } from "../../lib/geocode";
-import { routeBetween, type LngLat } from "../../lib/routing";
-import SearchBox from "../SeachBox/SearchBox";
-import BottomBar from "../BottomBar";
+import { reverseGeocode } from "../../../features/places/api/places.api";
+import {
+  routeBetween,
+  type LngLat,
+} from "../../../features/routing/api/routing.api";
+import SearchBox from "../../../features/places/components/SearchBox/SearchBox";
+import BottomBar from "../../layout/BottomBar";
 import { Geolocation } from "@capacitor/geolocation";
-import NavPanel from "../NavPanel/NavPanel";
-import { snapToLine, lengthBetween } from "../../lib/nav";
-import type { RouteResult } from "../../lib/routing";
+import NavPanel from "../../../features/routing/components/RoutePanel/NavPanel";
+import {
+  snapToLine,
+  lengthBetween,
+} from "../../../features/routing/lib/navigation";
+import type { RouteResult } from "../../../features/routing/api/routing.api";
 import type { ExpressionSpecification } from "maplibre-gl";
-import { openInfo, INFO_URL } from "../../lib/openInfo";
+import { openInfo, INFO_URL } from "../../../lib/openInfo";
 import { Capacitor } from "@capacitor/core";
 
 let pmtilesRegistered = false;
 
-// Your vector tiles (preferred)
 const PMTILES_URL = "https://tiles.heatwaves.app/texas.pmtiles";
 
-// Guaranteed-safe fallback style so the map always renders
 const FALLBACK_STYLE_URL = "https://demotiles.maplibre.org/style.json";
 
 const COLORS = {
   bg: "#E6D2BC",
   text: "#1B1E22",
-  heat2: "#5c0f14", // destination pin
-  coolPin: "#e19638", //"#1FB5AD", // me pin
+  heat2: "#5c0f14",
+  coolPin: "#e19638",
   land: "#EEE3D5",
   water: "#F7F2EA",
   greens: "#D1C9B0",
@@ -39,16 +42,14 @@ const COLORS = {
   roadCase: "#B69372",
   hwyLabel: "#3D322B",
 
-  // Route styling
   routeHalo: "#ffffff",
-  routeFast: "#5c0f14", //"#D0532B", // warmest
-  routeBalanced: "#b44427", //"#0d6e69", // mid
-  routeCool: "#e19638", //"#1FB5AD", // coolest
+  routeFast: "#5c0f14",
+  routeBalanced: "#b44427",
+  routeCool: "#e19638",
 };
 
 type View = { center: [number, number]; zoom: number };
 
-// Route source/layer IDs
 const SRC_FAST = "hw-route-fast-src";
 const SRC_BAL = "hw-route-bal-src";
 const SRC_COOL = "hw-route-cool-src";
@@ -60,12 +61,10 @@ const LYR_BAL = "hw-route-bal";
 const LYR_COOL_HALO = "hw-route-cool-halo";
 const LYR_COOL = "hw-route-cool";
 
-/** Camera constants */
-const NAV_ZOOM = 18; // zoom when actively navigating (tight)
-const NAV_PITCH = 0; // top-down (no 3D)
-const PICKER_ZOOMOUT_DELTA = 0.15; // ~10–11% zoom-out in WebMercator terms
+const NAV_ZOOM = 18;
+const NAV_PITCH = 0;
+const PICKER_ZOOMOUT_DELTA = 0.15;
 
-/** geo helpers */
 function lineFeature(a: LngLat, b: LngLat) {
   return {
     type: "Feature",
@@ -74,7 +73,6 @@ function lineFeature(a: LngLat, b: LngLat) {
   } as const;
 }
 
-// ---------- persistent view helpers ----------
 declare global {
   interface Window {
     __HW_VIEW__?: View;
@@ -113,7 +111,6 @@ function saveView(v: View) {
   } catch {}
 }
 
-// ---------- tiny utils ----------
 function escapeHtml(s: string) {
   return s.replace(
     /[&<>"']/g,
@@ -140,7 +137,6 @@ const M_PER_MI = 1609.344;
 const WALKING_MPH = 2;
 
 function fmtDurationHM(sec?: number, distanceM?: number) {
-  // fallback: compute from distance at ~2 mph if time missing
   let s = sec;
   if (
     (s == null || !Number.isFinite(s)) &&
@@ -161,24 +157,21 @@ function fmtMiles(distanceM?: number) {
   return `${mi < 10 ? mi.toFixed(1) : Math.round(mi)} mi`;
 }
 
-// planar meters helpers for bearing/segment math
 const M_PER_DEG_LAT = 110_540;
 function M_PER_DEG_LON_AT(latDeg: number) {
   return 111_320 * Math.cos((latDeg * Math.PI) / 180);
 }
 
-// “heading from A to B” in degrees, clockwise from north
 function bearingDeg(a: LngLat, b: LngLat) {
   const midLat = (a[1] + b[1]) / 2;
   const kx = M_PER_DEG_LON_AT(midLat),
     ky = M_PER_DEG_LAT;
   const dx = (b[0] - a[0]) * kx;
   const dy = (b[1] - a[1]) * ky;
-  const rad = Math.atan2(dx, dy); // dx,dy so 0° is north, 90° is east
+  const rad = Math.atan2(dx, dy);
   return (rad * 180) / Math.PI;
 }
 
-// ================= Component =================
 type TripStats = { durationSec: number; distanceM: number };
 type AllStats = Partial<Record<"fast" | "bal" | "cool", TripStats>>;
 
@@ -206,13 +199,11 @@ export default function MapView() {
     totalRemainingM?: number;
   };
   const [nav, _setNav] = useState<NavState | null>(null);
-  // MapView.tsx (top-level in component)
   const [searchText, setSearchText] = useState("");
   const [revBusy, setRevBusy] = useState(false);
   const [needsLocation, setNeedsLocation] = useState(false);
 
   const requestLocation = () => {
-    // Trigger the browser prompt via a user gesture
     if (!("geolocation" in navigator)) return;
     navigator.geolocation.getCurrentPosition(
       () => {
@@ -230,25 +221,19 @@ export default function MapView() {
     );
   };
 
-  // keep latest nav in a ref so watchPosition sees fresh state
   const navRef = useRef<NavState | null>(null);
   function setNavNow(next: NavState | null) {
     navRef.current = next;
     _setNav(next);
   }
 
-  // routing state
   const routeDestRef = useRef<LngLat | null>(null);
   const routeReadyRef = useRef(false);
 
-  // UI: keep the 3 stats for the chooser
   const [stats, setStats] = useState<AllStats | null>(null);
 
-  // ---------- map init (once) ----------
   useEffect(() => {
     if (mapRef.current || !divRef.current) return;
-
-    // Build preferred vector style, but be ready to fall back
     let style: any;
     try {
       if (!pmtilesRegistered) {
@@ -514,7 +499,6 @@ export default function MapView() {
         prefetchZoomDelta: 1,
       });
 
-      // If the vector/pmtiles style fails later, auto-fallback
       map.on("error", (e) => {
         const msg =
           (e && (e as any).error && (e as any).error.message) || String(e);
@@ -524,7 +508,6 @@ export default function MapView() {
         }
       });
     } catch {
-      // Last resort
       map = new maplibregl.Map({
         container: divRef.current!,
         style: FALLBACK_STYLE_URL,
@@ -533,8 +516,6 @@ export default function MapView() {
         attributionControl: false,
       });
     }
-
-    // Controls
     map.addControl(
       new maplibregl.NavigationControl({ showZoom: true, showCompass: false }),
       "top-right"
@@ -551,12 +532,10 @@ export default function MapView() {
     );
     positionAttribution();
 
-    // Ensure route layers exist whenever a style is (re)loaded
     const ensureOnStyle = () => ensureRouteLayers(map);
     map.on("load", ensureOnStyle);
     map.on("style.load", ensureOnStyle);
 
-    // persist view after camera changes
     const persist = () => {
       const c = map.getCenter();
       const v = {
@@ -570,7 +549,6 @@ export default function MapView() {
     map.on("zoomend", persist);
     map.on("idle", persist);
 
-    // after map is created
     map.on("contextmenu", async (e) => {
       const dest: LngLat = [e.lngLat.lng, e.lngLat.lat];
       routeDestRef.current = dest;
@@ -598,11 +576,9 @@ export default function MapView() {
 
     mapRef.current = map;
 
-    // follow is ALWAYS on — native vs web (iOS Safari needs a user tap)
     (async () => {
       try {
         if (Capacitor.isNativePlatform()) {
-          // Native (Android/iOS app)
           const status = await Geolocation.checkPermissions();
           let state =
             (status as any).location ??
@@ -621,7 +597,6 @@ export default function MapView() {
             console.warn("[geo] location permission not granted (native)");
           }
         } else {
-          // Web (Safari/Chrome on iPhone): show a tap-to-enable if not already granted
           if (!("geolocation" in navigator)) {
             console.warn("[geo] navigator.geolocation not available");
             return;
@@ -637,11 +612,9 @@ export default function MapView() {
             if (perms?.state === "granted") {
               startFollowing(true);
             } else {
-              // iOS Safari often needs a user gesture to show the prompt
               setNeedsLocation(true);
             }
           } catch {
-            // Safari doesn't support Permissions API — require a tap
             setNeedsLocation(true);
           }
         }
@@ -658,7 +631,6 @@ export default function MapView() {
       map.off("idle", persist);
       popupRef.current?.remove();
 
-      // cleanup route artifacts
       safeRemoveRoutes(map);
 
       map.remove();
@@ -670,7 +642,7 @@ export default function MapView() {
   useEffect(() => {
     const update = () => {
       positionAttribution();
-      forceUIRerender((x) => x + 1); // recompute overlay offsets
+      forceUIRerender((x) => x + 1);
     };
     update();
     window.addEventListener("resize", update);
@@ -689,7 +661,6 @@ export default function MapView() {
   useEffect(() => {
     const onResize = () => {
       if (!mapRef.current) return;
-      // If we’re previewing both pins, keep them in view with the new padding.
       if (isPreviewing() && destMarkerRef.current) {
         const d = destMarkerRef.current.getLngLat();
         ensurePinsInView([d.lng, d.lat]);
@@ -706,7 +677,6 @@ export default function MapView() {
     };
   }, []);
 
-  // ---------- helpers: destination + fitting ----------
   function upsertDestMarker(ll: LngLat) {
     const m = mapRef.current!;
     if (!destMarkerRef.current) {
@@ -750,12 +720,10 @@ export default function MapView() {
 
     const portrait = window.innerHeight > window.innerWidth;
 
-    // Where's our bottom bar? (uses the aria-label already on BottomBar)
     const bar = document.querySelector(
       'aside[aria-label="Bottom controls"]'
     ) as HTMLElement | null;
 
-    // If we can measure it, use real height; otherwise fall back to ~25vh
     const barH =
       bar?.getBoundingClientRect().height ??
       Math.round(window.innerHeight * 0.25);
@@ -763,9 +731,8 @@ export default function MapView() {
     if (portrait) {
       corner.style.right = "calc(env(safe-area-inset-right, 0px) + 8px)";
       corner.style.bottom = `calc(${barH}px + env(safe-area-inset-bottom, 0px) + 25px)`;
-      corner.style.zIndex = "60"; // stay above map, below your sheet
+      corner.style.zIndex = "60";
     } else {
-      // default placement in landscape
       corner.style.right = "calc(env(safe-area-inset-right, 0px) + 8px)";
       corner.style.bottom = "calc(env(safe-area-inset-bottom, 0px) + 8px)";
       corner.style.zIndex = "";
@@ -781,7 +748,6 @@ export default function MapView() {
   }
 
   function mapPadding() {
-    // base padding around the other sides
     const BASE = 60;
 
     if (typeof window === "undefined") {
@@ -790,7 +756,6 @@ export default function MapView() {
 
     const landscape = window.innerWidth >= window.innerHeight;
 
-    // use ~25% of the relevant axis + a little cushion (matches your bar sizing)
     if (landscape) {
       const right = Math.round(window.innerWidth * 0.25) + BASE;
       return { top: BASE, right, bottom: BASE, left: BASE };
@@ -816,7 +781,6 @@ export default function MapView() {
     });
   }
 
-  // keep both pins in view while moving, without jitter
   function ensurePinsInView(dest: LngLat) {
     const m = mapRef.current!;
     const me = getMePoint();
@@ -839,21 +803,18 @@ export default function MapView() {
   }
 
   function railWidthAtZoom(z: number) {
-    // 10→3.0, 14→5.0, 18→8.0
     if (z <= 10) return 3.0;
     if (z >= 18) return 8.0;
     if (z <= 14) return 3.0 + (5.0 - 3.0) * ((z - 10) / 4);
     return 5.0 + (8.0 - 5.0) * ((z - 14) / 4);
   }
   function offsetAtZoom(z: number) {
-    // 10→2.2, 14→3.4, 18→5.0
     if (z <= 10) return 2.2;
     if (z >= 18) return 5.0;
     if (z <= 14) return 2.2 + (3.4 - 2.2) * ((z - 10) / 4);
     return 3.4 + (5.0 - 3.4) * ((z - 14) / 4);
   }
 
-  // Count which routes are present overall (used for centering pairs)
   function activeKinds() {
     const r = routesRef.current;
     const a: ("fast" | "bal" | "cool")[] = [];
@@ -863,7 +824,6 @@ export default function MapView() {
     return a;
   }
 
-  // ---------- Route layer helpers (3 parallel routes) ----------
   function ensureRouteLayers(map: maplibregl.Map) {
     const addSrc = (id: string) => {
       if (!map.getSource(id)) {
@@ -875,7 +835,6 @@ export default function MapView() {
       }
     };
 
-    // width scales with zoom
     const LINE_WIDTH_EXPR = [
       "interpolate",
       ["linear"],
@@ -888,10 +847,8 @@ export default function MapView() {
       8.0,
     ] as any;
 
-    // small halo around each rail
     const HALO_WIDTH_EXPR = ["+", LINE_WIDTH_EXPR, 2] as any;
 
-    // IMPORTANT: define offset for each side explicitly (no ["*", -1, ...])
     const OFFSET_POS = [
       "interpolate",
       ["linear"],
@@ -919,7 +876,6 @@ export default function MapView() {
     addSrc(SRC_BAL);
     addSrc(SRC_COOL);
 
-    // --- halos first (so rails render on top) ---
     const addHalo = (id: string, srcId: string, offsetExpr: any) => {
       if (!map.getLayer(id)) {
         map.addLayer({
@@ -937,11 +893,10 @@ export default function MapView() {
       }
     };
 
-    addHalo(LYR_FAST_HALO, SRC_FAST, OFFSET_NEG); // left
-    addHalo(LYR_BAL_HALO, SRC_BAL, 0); // center
-    addHalo(LYR_COOL_HALO, SRC_COOL, OFFSET_POS); // right
+    addHalo(LYR_FAST_HALO, SRC_FAST, OFFSET_NEG);
+    addHalo(LYR_BAL_HALO, SRC_BAL, 0);
+    addHalo(LYR_COOL_HALO, SRC_COOL, OFFSET_POS);
 
-    // --- colored rails ---
     const addRail = (
       id: string,
       srcId: string,
@@ -964,9 +919,9 @@ export default function MapView() {
       }
     };
 
-    addRail(LYR_FAST, SRC_FAST, COLORS.routeFast, OFFSET_NEG); // left
-    addRail(LYR_BAL, SRC_BAL, COLORS.routeBalanced, 0); // center
-    addRail(LYR_COOL, SRC_COOL, COLORS.routeCool, OFFSET_POS); // right
+    addRail(LYR_FAST, SRC_FAST, COLORS.routeFast, OFFSET_NEG);
+    addRail(LYR_BAL, SRC_BAL, COLORS.routeBalanced, 0);
+    addRail(LYR_COOL, SRC_COOL, COLORS.routeCool, OFFSET_POS);
   }
 
   function setRouteGeometry(srcId: string, feature: any) {
@@ -1003,7 +958,6 @@ export default function MapView() {
     });
   }
 
-  // hide/show helpers for routes: keep only one visible
   function showOnlyRoute(kind: "fast" | "bal" | "cool") {
     if (kind !== "fast") setRouteGeometry(SRC_FAST, null as any);
     if (kind !== "bal") setRouteGeometry(SRC_BAL, null as any);
@@ -1014,21 +968,18 @@ export default function MapView() {
     const route = routesRef.current[kind];
     if (!route || !mapRef.current) return;
 
-    // keep only the chosen line on the map
     showOnlyRoute(kind);
 
-    // enter nav state
     setNavNow({
       profile: kind,
       route,
       stepIndex: 0,
       startedAt: Date.now(),
       offRouteSince: null,
-      stepRemainingM: route.instructions?.[0]?.distance ?? route.distance, // seed
+      stepRemainingM: route.instructions?.[0]?.distance ?? route.distance,
       totalRemainingM: route.distance,
     });
 
-    // snap camera to you, top-down, tight zoom
     const here = getMePoint();
     if (here) {
       mapRef.current.easeTo({
@@ -1055,7 +1006,6 @@ export default function MapView() {
     destMarkerRef.current = null;
   }
 
-  // thresholds for reroute
   const OFF_ROUTE_M = 40;
   const OFF_ROUTE_SECS = 6;
   const REROUTE_COOLDOWN_MS = 12_000;
@@ -1065,11 +1015,9 @@ export default function MapView() {
     const nav = navRef.current;
     if (!nav) return;
 
-    // snap to current line
     const snapped = snapToLine(nav.route.geometry, here);
     const off = snapped.offDistM;
 
-    // off-route tracking
     if (off > OFF_ROUTE_M) {
       if (!nav.offRouteSince) {
         setNavNow({ ...nav, offRouteSince: Date.now() });
@@ -1087,7 +1035,7 @@ export default function MapView() {
               ? "foot_balanced"
               : "foot_coolest",
         })
-          .then((next) => {
+          .then((next: RouteResult) => {
             routesRef.current[nav.profile] = next;
             setRouteGeometry(
               nav.profile === "fast"
@@ -1111,7 +1059,6 @@ export default function MapView() {
       setNavNow({ ...nav, offRouteSince: null });
     }
 
-    // step advancement + live distances
     const steps = nav.route.instructions ?? [];
     if (!steps.length) return;
 
@@ -1121,14 +1068,13 @@ export default function MapView() {
     ][];
     const idx = Math.max(0, nav.stepIndex);
     const cur = steps[idx];
-    if (!cur || !Array.isArray(cur.interval)) return; // safety
+    if (!cur || !Array.isArray(cur.interval)) return;
 
     const endVertex = Math.min(
       coords.length - 1,
       Math.max(0, cur.interval[1] ?? snapped.nextIndex)
     );
 
-    // meters from snapped point to the next vertex (if it exists)
     let extra = 0;
     if (snapped.nextIndex < coords.length) {
       const nextC = coords[snapped.nextIndex];
@@ -1150,9 +1096,8 @@ export default function MapView() {
     const totalRemainingM = Math.max(
       0,
       (nav.route.distance ?? 0) - snapped.traveledM
-    ); // push live values even if we don't change stepIndex
+    );
 
-    // push live values even if we don't change stepIndex
     _setNav((prev) => {
       if (!prev) return prev;
       const updated = { ...prev, stepRemainingM: mToEnd, totalRemainingM };
@@ -1170,10 +1115,9 @@ export default function MapView() {
       const [fast, bal, cool] = await Promise.allSettled([
         routeBetween(from, to, { ghProfile: "foot_fastest" }),
         routeBetween(from, to, { ghProfile: "foot_balanced" }),
-        routeBetween(from, to, { ghProfile: "foot_coolest" }), // <-- fixed typo
+        routeBetween(from, to, { ghProfile: "foot_coolest" }),
       ]);
 
-      // update map geometries
       if (fast.status === "fulfilled") {
         setRouteGeometry(SRC_FAST, fast.value.geometry);
         routesRef.current.fast = fast.value;
@@ -1199,7 +1143,6 @@ export default function MapView() {
         delete routesRef.current.cool;
       }
 
-      // Build stats for the UI
       const next: AllStats = {};
       let any = false;
 
@@ -1237,12 +1180,10 @@ export default function MapView() {
     }
   }
 
-  // Are we previewing routes (dest picked) but not actively navigating?
   function isPreviewing() {
     return !!routeDestRef.current && !navRef.current;
   }
 
-  // ---------- follow mode (always on) ----------
   async function startFollowing(zoomOnFirstFix = false) {
     const m = mapRef.current!;
     let gotFirstFix = false;
@@ -1261,7 +1202,6 @@ export default function MapView() {
         meMarkerRef.current.setLngLat(here);
       }
 
-      // update nav computations first
       onNavTick(here);
       lastFixRef.current = here;
 
@@ -1269,7 +1209,6 @@ export default function MapView() {
         computeAndRenderAllRoutes(here, routeDestRef.current);
       }
 
-      // Camera behavior
       const navCur = navRef.current;
 
       if (navCur && mapRef.current) {
@@ -1327,7 +1266,6 @@ export default function MapView() {
 
     const onError = (err: any) => {
       console.warn("[geo] watch error:", err?.code, err?.message ?? err);
-      // If user denied, surface the button on web
       if (!Capacitor.isNativePlatform()) setNeedsLocation(true);
     };
 
@@ -1339,11 +1277,9 @@ export default function MapView() {
         onPosition(pos as any);
       });
     } else {
-      // Web watcher
       navigator.geolocation.watchPosition(onPosition, onError, options);
     }
   }
-  // ---------- called by SearchBox ----------
   const goToHit = (hit: {
     center: LngLat;
     bbox?: [number, number, number, number];
@@ -1352,27 +1288,23 @@ export default function MapView() {
     if (!m) return;
 
     const dest = hit.center;
-    routeDestRef.current = dest; // remember for later renders
-    routeReadyRef.current = false; // force recompute on new dest
+    routeDestRef.current = dest;
+    routeReadyRef.current = false;
     upsertDestMarker(dest);
 
     const me = getMePoint();
     if (me) {
       computeAndRenderAllRoutes(me, dest);
     } else {
-      // We'll compute once we get the next GPS fix
       clearAllRoutes();
       setStats(null);
     }
 
-    // Fit both pins, then zoom out ~10% for a nicer chooser view
     fitToMeAndDest(dest);
-    // After bounds fit, ensure preview is north-up & a touch more zoomed out
     m.once("moveend", () => {
-      // still in preview (no active nav)?
       if (!navRef.current) {
         m.easeTo({
-          zoom: Math.max(0, m.getZoom() - PICKER_ZOOMOUT_DELTA), // ~10% more zoomed out
+          zoom: Math.max(0, m.getZoom() - PICKER_ZOOMOUT_DELTA),
           bearing: 0,
           pitch: NAV_PITCH,
           duration: 300,
@@ -1392,7 +1324,6 @@ export default function MapView() {
       }
     : {};
 
-  // ---------- render ----------
   return (
     <div className="relative w-full h-screen">
       {/* Web-only “Enable location” chip (iOS Safari often needs a tap) */}
@@ -1428,7 +1359,7 @@ export default function MapView() {
                 onPick={goToHit}
                 value={searchText}
                 onValueChange={setSearchText}
-                busy={revBusy} // 👈 NEW
+                busy={revBusy}
               />
 
               {stats && (

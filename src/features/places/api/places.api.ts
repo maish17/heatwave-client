@@ -1,39 +1,33 @@
 export type ForwardHit = {
   id: string;
   label: string;
-  center: [number, number]; // [lng, lat]
-  bbox?: [number, number, number, number]; // [west, south, east, north]
-  /** optional: which provider returned this result */
+  center: [number, number];
+  bbox?: [number, number, number, number];
   src?: "mapbox" | "osm";
 };
 
 const NOMINATIM = "https://nominatim.openstreetmap.org";
-// 👇 put a real email per Nominatim policy
 const UA = "heatwave-client/0.1 (mmoylemaish@icloud.com)";
 
 const MBX = "https://api.mapbox.com/geocoding/v5/mapbox.places/";
 const MBX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
 
-// Valid Mapbox geocoding types (no `street`)
 const MBX_TYPES =
   "address,place,locality,neighborhood,postcode,region,country,poi";
 
-// --- Texas clamp (slightly padded) ---
 const TX_W = -107.0;
 const TX_S = 25.5;
 const TX_E = -93.0;
 const TX_N = 36.7;
 const TX_BBOX_ARR: [number, number, number, number] = [TX_W, TX_S, TX_E, TX_N];
-const TX_BBOX_STR = `${TX_W},${TX_S},${TX_E},${TX_N}`; // mapbox (minX,minY,maxX,maxY)
-const TX_VIEWBOX_STR = `${TX_W},${TX_N},${TX_E},${TX_S}`; // nominatim (left,top,right,bottom)
+const TX_BBOX_STR = `${TX_W},${TX_S},${TX_E},${TX_N}`;
+const TX_VIEWBOX_STR = `${TX_W},${TX_N},${TX_E},${TX_S}`;
 
-// central place to enforce a min length (avoid 422s on "1", "16", etc.)
 const MIN_QUERY_LEN = 3;
 
-// ---- tiny caches (speed!) ----
 type CacheEntry<T> = { t: number; v: T };
-const CACHE_TTL_MS_FWD = 10 * 60 * 1000; // 10 min
-const CACHE_TTL_MS_REV = 30 * 60 * 1000; // 30 min
+const CACHE_TTL_MS_FWD = 10 * 60 * 1000;
+const CACHE_TTL_MS_REV = 30 * 60 * 1000;
 const MAX_CACHE = 300;
 
 const forwardCache = new Map<string, CacheEntry<ForwardHit[]>>();
@@ -43,8 +37,14 @@ const inflightRev = new Map<string, Promise<{ label: string; raw: any }>>();
 
 function trimLRU<T>(m: Map<string, T>, max = MAX_CACHE) {
   while (m.size > max) {
-    const k = m.keys().next().value;
-    m.delete(k);
+    const it = m.keys().next();
+    if (it.done) break;
+    const k = it.value;
+    if (typeof k === "string") {
+      m.delete(k);
+    } else {
+      break;
+    }
   }
 }
 function round(x: number, d = 3) {
@@ -81,7 +81,6 @@ function centerInBbox(
   return lng >= w && lng <= e && lat >= s && lat <= n;
 }
 
-/** Forward geocode (Mapbox first, then Nominatim), RESTRICTED TO TEXAS */
 export async function forwardGeocode(
   query: string,
   opts?: {
@@ -136,7 +135,6 @@ export async function forwardGeocode(
   }
 }
 
-/** Reverse geocode (Mapbox first, then Nominatim) */
 export async function reverseGeocode(
   lng: number,
   lat: number,
@@ -175,7 +173,6 @@ export async function reverseGeocode(
   }
 }
 
-// ---------- Mapbox impls ----------
 async function mapboxForward(
   query: string,
   opts?: {
@@ -192,12 +189,11 @@ async function mapboxForward(
   url.searchParams.set("autocomplete", "true");
   url.searchParams.set("fuzzyMatch", "true");
   url.searchParams.set("types", MBX_TYPES);
-  url.searchParams.set("bbox", TX_BBOX_STR); // 🔒 restrict to Texas
-  url.searchParams.set("country", "us"); // extra guard
+  url.searchParams.set("bbox", TX_BBOX_STR);
+  url.searchParams.set("country", "us");
   if (opts?.lang) url.searchParams.set("language", opts.lang);
-  // proximity still helps ranking *within* the bbox
   if (opts?.proximity) {
-    const [lng, lat] = opts.proximity; // MUST be "lng,lat"
+    const [lng, lat] = opts.proximity;
     url.searchParams.set("proximity", `${lng},${lat}`);
   }
 
@@ -227,7 +223,6 @@ async function mapboxForward(
 
   const data = await resp.json();
   const feats = (data?.features ?? []) as Array<any>;
-  // Safety filter (in case of any odd result spillover)
   const filtered = feats.filter((f) => centerInBbox(f?.center, f?.bbox));
   return filtered.map((f) => {
     const id = String(f?.id ?? Math.random());
@@ -271,11 +266,10 @@ async function mapboxReverse(
   return { label, raw: data };
 }
 
-// ---------- Nominatim impls ----------
 async function nominatimForward(
   query: string,
   opts?: {
-    proximity?: [number, number]; // ignored for OSM when bounded
+    proximity?: [number, number];
     limit?: number;
     lang?: string;
     countrycodes?: string;
@@ -286,10 +280,8 @@ async function nominatimForward(
   url.searchParams.set("q", query);
   url.searchParams.set("format", "geojson");
   url.searchParams.set("limit", String(limit));
-  // in nominatimForward(): change addressdetails from 1 -> 0
-  url.searchParams.set("addressdetails", "0"); // smaller response, we only use display_name
-  url.searchParams.set("countrycodes", "us"); // guard to US
-  // 🔒 hard clamp to Texas
+  url.searchParams.set("addressdetails", "0");
+  url.searchParams.set("countrycodes", "us");
   url.searchParams.set("viewbox", TX_VIEWBOX_STR);
   url.searchParams.set("bounded", "1");
   if (opts?.lang) url.searchParams.set("accept-language", opts.lang);
@@ -303,7 +295,6 @@ async function nominatimForward(
   const data = await resp.json();
 
   const feats = (data?.features ?? []) as Array<any>;
-  // Safety filter to TX bbox (should already be bounded)
   const filtered = feats.filter((f) =>
     centerInBbox(f?.geometry?.coordinates as any, f?.bbox as any)
   );

@@ -3,7 +3,6 @@ import { Capacitor } from "@capacitor/core";
 import { Browser } from "@capacitor/browser";
 
 function devInfoUrl() {
-  // Android emulator can't reach localhost; use 10.0.2.2
   if (Capacitor.getPlatform() === "android") return "http://10.0.2.2:5173/info";
   return `${window.location.origin}/info`;
 }

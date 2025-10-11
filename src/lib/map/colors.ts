@@ -1,0 +1,21 @@
+export const COLORS = {
+  bg: "#E6D2BC",
+  text: "#1B1E22",
+  heat2: "#5c0f14",
+  coolPin: "#e19638",
+  land: "#EEE3D5",
+  water: "#F7F2EA",
+  greens: "#D1C9B0",
+  bldg: "#E9D8C6",
+  bldgLine: "#CDB79E",
+  roadMinor: "#E8DACB",
+  roadPrim: "#D7C1A8",
+  roadHwy: "#C9AB89",
+  roadCase: "#B69372",
+  hwyLabel: "#3D322B",
+
+  routeHalo: "#ffffff",
+  routeFast: "#5c0f14",
+  routeBalanced: "#b44427",
+  routeCool: "#e19638",
+} as const;
