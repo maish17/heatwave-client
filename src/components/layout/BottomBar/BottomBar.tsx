@@ -1,4 +1,3 @@
-// src/components/BottomBar.tsx
 import { useEffect, useState, type ReactNode } from "react";
 import clsx from "clsx";
 
@@ -48,9 +47,9 @@ export default function BottomBar({ className = "", children }: Props) {
       >
         {}
         <div aria-hidden className="leading-none">
-          <div className="h-[7px] bg-[#e19638]" /> {/* light */}
-          <div className="h-[7px] bg-[#b44427]" /> {/* mid   */}
-          <div className="h-[7px] bg-[#5c0f14]" /> {/* dark  */}
+          <div className="h-[7px] bg-[#e19638]" />
+          <div className="h-[7px] bg-[#b44427]" />
+          <div className="h-[7px] bg-[#5c0f14]" />
         </div>
 
         {}

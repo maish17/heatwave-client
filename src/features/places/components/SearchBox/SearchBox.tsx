@@ -1,4 +1,3 @@
-// src/components/SearchBox/SearchBox.tsx
 import { useEffect, useRef, useState } from "react";
 import { forwardGeocode, type ForwardHit } from "../../api/places.api";
 
@@ -12,7 +11,7 @@ type Props = {
     bbox?: [number, number, number, number];
     label?: string;
   }) => void;
-  busy?: boolean; // 👈 NEW
+  busy?: boolean;
 };
 
 export default function SearchBox({
@@ -21,7 +20,7 @@ export default function SearchBox({
   onValueChange,
   biasCenter,
   onPick,
-  busy = false, // 👈 NEW
+  busy = false,
 }: Props) {
   const [q, setQ] = useState(value ?? "");
   const [loading, setLoading] = useState(false);
@@ -30,14 +29,11 @@ export default function SearchBox({
   const [highlight, setHighlight] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Remember the last-selected label so we don't immediately refetch suggestions for it
   const selectedLabelRef = useRef<string | null>(null);
 
-  // keep internal q in sync with parent value
   useEffect(() => {
     if (value !== undefined && value !== q) {
       setQ(value);
-      // suppress immediate re-search when parent programmatically sets a full label
       selectedLabelRef.current = value;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -46,11 +42,9 @@ export default function SearchBox({
   const debounced = useDebounced(q, 300);
   const MIN_LEN = 3;
 
-  // fetch suggestions
   useEffect(() => {
     const query = debounced.trim();
 
-    // If the input exactly matches the selected label, suppress lookups and keep the menu closed
     if (selectedLabelRef.current && query === selectedLabelRef.current) {
       setOpen(false);
       setResults([]);
@@ -117,7 +111,6 @@ export default function SearchBox({
     const hit = results[i];
     if (!hit) return;
 
-    // Fill the input with the chosen label and suppress immediate re-search
     selectedLabelRef.current = hit.label ?? null;
     if (hit.label) {
       setQ(hit.label);
@@ -131,7 +124,6 @@ export default function SearchBox({
   };
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // If user edits after a selection, clear the selection sentinel so lookups resume
     if (selectedLabelRef.current) selectedLabelRef.current = null;
     const v = e.target.value;
     setQ(v);
@@ -204,7 +196,6 @@ export default function SearchBox({
   );
 }
 
-/** tiny debounce hook (local) */
 function useDebounced<T>(value: T, delay = 300): T {
   const [v, setV] = useState(value);
   useEffect(() => {

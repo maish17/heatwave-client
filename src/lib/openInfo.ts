@@ -19,7 +19,6 @@ export async function openInfo() {
       window.open(INFO_URL, "_blank", "noopener,noreferrer");
     }
   } catch {
-    // last resort
     window.location.href = INFO_URL;
   }
 }

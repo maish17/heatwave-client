@@ -1,5 +1,4 @@
 @import "./fonts.css";
-
 @import "tailwindcss";
 
 @theme {
@@ -32,21 +31,17 @@ body {
   display: none !important;
 }
 
-/* Hide the compass (keeps only +/-) — already in your sheet, repeating for completeness */
 .maplibregl-ctrl-compass {
   display: none !important;
 }
 
-/* Default spacing for desktop */
 .maplibregl-ctrl-top-right {
-  margin-top: 8px; /* small breathing room on desktop */
+  margin-top: 8px;
   margin-right: 8px;
 }
 
-/* In portrait, push the control below the header */
 @media (orientation: portrait) {
   .maplibregl-ctrl-top-right {
-    /* header height + safe area + a small gap */
     margin-top: calc(
       var(--hw-header-h, 72px) + env(safe-area-inset-top, 0px) + 8px
     );

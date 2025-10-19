@@ -4,15 +4,10 @@ import React, { useEffect, useMemo, useState, type FC } from "react";
 export type HeatwaveHeaderProps = {
   className?: string;
   label?: string;
-
   elbowX?: number;
-
   arcRise?: number;
-
   offsetY?: number;
-
   seamPad?: number;
-
   tOuter?: number;
   tMid?: number;
   tInner?: number;

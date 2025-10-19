@@ -6,10 +6,9 @@ import { fmtDistImperial, fmtEta, signToText } from "../../lib/navigation";
 type Props = {
   route: RouteResult;
   stepIndex: number;
-  startedAt: number; // ms since epoch
+  startedAt: number;
   onEnd(): void;
 
-  // live values pushed by MapView.onNavTick (optional fallbacks inside)
   stepRemainingM?: number;
   totalRemainingM?: number;
 };
@@ -22,10 +21,8 @@ export default function NavPanel({
   stepRemainingM,
   totalRemainingM,
 }: Props) {
-  // Normalize instructions to a concrete array
   const steps: GHInstruction[] = (route.instructions ?? []) as GHInstruction[];
 
-  // Ensure first step has readable text (GH sometimes leaves it empty)
   if (steps.length > 0) {
     const s0 = steps[0] as GHInstruction;
     if (!s0.text || s0.text.trim() === "") {
@@ -44,7 +41,6 @@ export default function NavPanel({
     }
   }
 
-  // Clamp index safely
   const safeIndex = Math.min(
     Math.max(0, stepIndex),
     Math.max(0, steps.length - 1)
@@ -53,7 +49,6 @@ export default function NavPanel({
   const next1 = steps[safeIndex + 1];
   const next2 = steps[safeIndex + 2];
 
-  // Remaining distance and ETA
   const fallbackRemainingM = useMemo(() => {
     let m = 0;
     for (let i = safeIndex; i < steps.length; i++) m += steps[i]?.distance ?? 0;
@@ -62,7 +57,6 @@ export default function NavPanel({
 
   const remainingMeters = totalRemainingM ?? fallbackRemainingM;
 
-  // Use route's average speed if available
   const avgSpeedMps = (route.distance ?? 0) / Math.max(1, route.duration ?? 1);
   const etaSec = Math.max(
     0,
@@ -71,7 +65,6 @@ export default function NavPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Header row */}
       <div className="flex items-center justify-between">
         <div className="text-[15px] font-semibold">
           {fmtDistImperial(remainingMeters)} · {fmtEta(etaSec)}
@@ -84,7 +77,6 @@ export default function NavPanel({
         </button>
       </div>
 
-      {/* Current step */}
       <div className="rounded-xl border border-black/10 bg-white/95 shadow px-3 py-3">
         <div className="text-base font-medium">
           {current?.text || signToText(current?.sign ?? 0)}
@@ -94,7 +86,6 @@ export default function NavPanel({
         </div>
       </div>
 
-      {/* Up next */}
       {!!next1 && (
         <div className="rounded-xl border border-black/10 bg-white/80 px-3 py-2">
           <div className="text-[14px]">

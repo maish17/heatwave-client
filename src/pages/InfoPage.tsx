@@ -192,7 +192,7 @@ export default function InfoPage() {
               </li>
             </ul>
             <p className="text-sm" style={{ color: THEME.subtext }}>
-              ⚠️ Always use your judgment outdoors—shade and access can change.
+              Always use your judgment outdoors—shade and access can change.
             </p>
           </div>
         </Section>
@@ -295,7 +295,6 @@ export default function InfoPage() {
           </div>
         </Section>
 
-        {/* OSM-style attribution note */}
         <div className="mt-10 text-xs">
           <div
             className="inline-flex items-center gap-2 rounded-xl px-3 py-2"

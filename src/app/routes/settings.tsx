@@ -1,15 +1,13 @@
-// src/pages/InfoPage.tsx
 import { Link } from "react-router-dom";
 
-/** Local theme (mirrors your map palette) */
 const THEME = {
-  bg: "#F7F2EA", // page background (your water)
+  bg: "#F7F2EA",
   panel: "#FFFAF3",
   text: "#1B1E22",
   subtext: "#4a4039",
-  stripe1: "#e19638", // light (top)
-  stripe2: "#b44427", // mid
-  stripe3: "#5c0f14", // dark (bottom)
+  stripe1: "#e19638",
+  stripe2: "#b44427",
+  stripe3: "#5c0f14",
   link: "#b44427",
   linkHover: "#5c0f14",
   border: "rgba(92,15,20,0.12)",
@@ -40,7 +38,6 @@ function Section({
         className="text-2xl md:text-3xl mt-10 mb-4"
         style={{
           color: THEME.text,
-          // Apple Garamond for display if available
           fontFamily: '"Apple Garamond","Garamond",ui-serif,serif',
         }}
       >
@@ -66,14 +63,12 @@ export default function InfoPage() {
       style={{
         background: THEME.bg,
         color: THEME.text,
-        // IBM Plex Sans as body; falls back to system
         fontFamily:
           '"IBM Plex Sans","Segoe UI","Helvetica Neue",Arial,system-ui,-apple-system,sans-serif',
       }}
     >
       <TopStripes />
 
-      {/* Header */}
       <header className="px-5 md:px-8 pt-8 md:pt-10 max-w-4xl mx-auto">
         <div className="flex items-center justify-between gap-4">
           <h1
@@ -107,7 +102,6 @@ export default function InfoPage() {
           and shade so you can get there comfortably.
         </p>
 
-        {/* Quick nav */}
         <nav className="mt-6">
           <ul className="flex flex-wrap gap-2">
             {[
@@ -136,7 +130,6 @@ export default function InfoPage() {
         </nav>
       </header>
 
-      {/* Content */}
       <main className="px-5 md:px-8 pb-20 max-w-4xl mx-auto">
         <Section id="about" title="About">
           <p className="leading-relaxed" style={{ color: THEME.subtext }}>
@@ -196,7 +189,7 @@ export default function InfoPage() {
               </li>
             </ul>
             <p className="text-sm" style={{ color: THEME.subtext }}>
-              ⚠️ Always use your judgment outdoors—shade and access can change.
+              Always use your judgment outdoors—shade and access can change.
             </p>
           </div>
         </Section>
@@ -299,7 +292,6 @@ export default function InfoPage() {
           </div>
         </Section>
 
-        {/* OSM-style attribution note */}
         <div className="mt-10 text-xs">
           <div
             className="inline-flex items-center gap-2 rounded-xl px-3 py-2"

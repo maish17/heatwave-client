@@ -1,4 +1,3 @@
-// src/app/App.tsx
 import React from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
 

@@ -2,7 +2,6 @@ import maplibregl from "maplibre-gl";
 import type { Map } from "maplibre-gl";
 type RouteFeature = GeoJSON.Feature<GeoJSON.LineString>;
 
-// Source IDs for routes
 export const SRC_FAST = "route-fast";
 export const SRC_BAL = "route-bal";
 export const SRC_COOL = "route-cool";
@@ -19,24 +18,22 @@ const LINE_WIDTH_EXPR = [
   8.0,
 ] as any;
 
-// small halo around each rail (explicit interpolate; no nested zoom usage)
 const HALO_WIDTH_EXPR = [
   "interpolate",
   ["linear"],
   ["zoom"],
   10,
-  5.0, // 3.0 + 2
+  5.0,
   14,
-  7.0, // 5.0 + 2
+  7.0,
   18,
-  10.0, // 8.0 + 2
+  10.0,
 ] as any;
 
 const OFFSET_POS = 2;
 const OFFSET_NEG = -2;
 
 function ensureRouteLayers(map: Map) {
-  // Add sources if not present
   if (!map.getSource(SRC_FAST)) {
     map.addSource(SRC_FAST, {
       type: "geojson",
@@ -56,7 +53,6 @@ function ensureRouteLayers(map: Map) {
     });
   }
 
-  // Add layers for each route kind if not present
   if (!map.getLayer("route-fast-halo")) {
     map.addLayer({
       id: "route-fast-halo",

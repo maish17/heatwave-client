@@ -214,7 +214,7 @@ export default function MapView() {
         console.warn("[geo] getCurrentPosition error:", err);
         setNeedsLocation(true);
         alert(
-          "Location permission is blocked. In Safari, tap the aA button → Website Settings → Location: Allow and turn on Precise Location."
+          "Location permission is blocked. Please enable Precise Location."
         );
       },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
@@ -1326,7 +1326,6 @@ export default function MapView() {
 
   return (
     <div className="relative w-full h-screen">
-      {/* Web-only “Enable location” chip (iOS Safari often needs a tap) */}
       {!Capacitor.isNativePlatform() && needsLocation && (
         <button
           onClick={requestLocation}
@@ -1338,10 +1337,8 @@ export default function MapView() {
           Enable location
         </button>
       )}
-      {/* Map */}
       <div ref={divRef} className="w-full h-full" />
 
-      {/* Bottom bar (search + route chooser) */}
       <BottomBar>
         <div className="w-full">
           {navRef.current ? (
@@ -1364,7 +1361,6 @@ export default function MapView() {
 
               {stats && (
                 <div className="mt-3 flex flex-col gap-2">
-                  {/* FASTEST */}
                   <div
                     className="group flex items-center justify-between gap-3 rounded-xl
                     ring-1 ring-[#5c0f14]/10 bg-[#fffaf3] hover:bg-[#fff6ea]
@@ -1401,8 +1397,6 @@ export default function MapView() {
                       </button>
                     </div>
                   </div>
-
-                  {/* BALANCED */}
                   <div
                     className="group flex items-center justify-between gap-3 rounded-xl
                     ring-1 ring-[#5c0f14]/10 bg-[#fffaf3] hover:bg-[#fff6ea]
@@ -1439,8 +1433,6 @@ export default function MapView() {
                       </button>
                     </div>
                   </div>
-
-                  {/* COOLEST */}
                   <div
                     className="group flex items-center justify-between gap-3 rounded-xl
                     ring-1 ring-[#5c0f14]/10 bg-[#fffaf3] hover:bg-[#fff6ea]

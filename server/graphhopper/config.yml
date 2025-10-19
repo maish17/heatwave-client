@@ -2,16 +2,12 @@ graphhopper:
   datareader.file: ./texas-latest.osm.pbf
   graph.location: ./graph-cache
 
-  # Required by GH9 when you use these in custom models:
   graph.encoded_values: road_access, road_class, surface
 
-  # Small perf win and keeps foot routing away from highways anyway
   import.osm.ignored_highways: [motorway, motorway_link, trunk, trunk_link]
 
-  # Where the custom_model files live
   custom_models.directory: ./custom_models
 
-  # Three profiles baked at import time (uses CH for speed)
   profiles:
     - name: foot_fastest
       base: foot
@@ -25,7 +21,6 @@ graphhopper:
       base: foot
       custom_model_files: [foot-cool.json]
 
-  # Precompute CH for each profile (fast queries, offline-friendly)
   profiles_ch:
     - profile: foot_fastest
     - profile: foot_balanced
