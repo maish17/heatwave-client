@@ -7,8 +7,8 @@ import {
   routeBetween,
   type LngLat,
 } from "../../../features/routing/api/routing.api";
-import SearchBox from "../../../features/places/components/SearchBox/SearchBox";
-import BottomBar from "../../layout/BottomBar";
+import SearchBox from "../SearchBox";
+import BottomBar from "../BottomBar";
 import { Geolocation } from "@capacitor/geolocation";
 import NavPanel from "../../../features/routing/components/RoutePanel/NavPanel";
 import {

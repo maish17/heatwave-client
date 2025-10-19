@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { forwardGeocode, type ForwardHit } from "../../api/places.api";
+import {
+  forwardGeocode,
+  type ForwardHit,
+} from "../../../features/places/api/places.api";
 
 type Props = {
   className?: string;
