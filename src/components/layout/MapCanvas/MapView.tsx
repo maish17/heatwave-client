@@ -24,6 +24,7 @@ let pmtilesRegistered = false;
 
 const PMTILES_URL = "https://tiles.heatwaves.app/texas.pmtiles";
 
+//hi
 const FALLBACK_STYLE_URL = "https://demotiles.maplibre.org/style.json";
 
 const COLORS = {
