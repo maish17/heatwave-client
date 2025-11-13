@@ -6,6 +6,6 @@ android/app/src/main/assets/public/
 *.pmtiles
 *.mbtiles
 *.sqlite
-**/tiles/
 .DS_Store
 .env*
+.public/tiles/*.pmtiles

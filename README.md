@@ -1,226 +1,272 @@
 # Heatwave Client
 
-A mobile-first React + Capacitor app that shows heat-aware walking routes across Texas.  
-It uses **MapLibre GL** for rendering, **PMTiles** (served from Cloudflare R2) for vector tiles, and a self‑hosted **GraphHopper** instance for routing.
+Heatwave is a pedestrian navigation app designed for hot climates. Instead of only optimizing for distance or time, it offers walking routes that reduce heat exposure by preferring shaded, low-effort, and cooler-feeling paths.
 
-> TL;DR to run: set env vars, `npm i`, `npm run dev` (web) or open the Android project with Android Studio (mobile).
+This repository contains the frontend client and local configuration for the GraphHopper routing backend.
 
 ---
 
 ## Features
 
-- 📍 Live geolocation & “follow me” camera
-- 🗺️ Offline‑friendly vector tiles via PMTiles
-- 🧭 Three pedestrian route profiles:
-  - `foot_fastest` (quickest)
-  - `foot_balanced` (default)
-  - `foot_coolest` (prefers cooler streets per custom model)
-- 🔎 Reverse geocoding on map tap (simple label popup)
-- 🧱 Clean, minimal UI with a bottom route picker
-- ⚙️ Works as PWA and as a native Android app via Capacitor
+- MapLibre-based interactive map with vector tiles (PMTiles)
+- Multiple pedestrian routing profiles:
+  - `foot-fastest` – shortest/fastest route
+  - `foot-cool` – heat-aware “coolest” route
+  - `foot-balanced` – compromise between time and comfort
+- Offline-capable tile data for Texas (via `texas.pmtiles`)
+- Route comparison and selection UI
+- Settings screen for tuning app behavior and route preferences
+- Layout tuned for mobile-first use, with bottom navigation and header
 
 ---
 
-## Architecture
+## Tech Stack
 
+- Frontend:
+  - React + TypeScript
+  - Vite
+  - MapLibre GL JS
+  - PMTiles (served from `public/tiles`)
+- Routing backend:
+  - GraphHopper
+  - Custom models for pedestrian routing (`foot-fastest`, `foot-cool`, `foot-balanced`)
+- Tooling:
+  - ESLint
+  - Vitest
+  - Capacitor (for native builds)
+
+---
+
+## Project Structure
+
+From the repository root:
+
+```text
+.
+├── capacitor.config.ts
+├── eslint.config.js
+├── index.html
+├── package.json
+├── package-lock.json
+├── public
+│   ├── favicon.svg
+│   └── tiles
+│       └── texas.pmtiles
+├── README.md
+├── server
+│   └── graphhopper
+│       ├── config.yml
+│       └── custom_models
+│           ├── foot-balanced.json
+│           ├── foot-cool.json
+│           └── foot-fastest.json
+├── src
+│   ├── app
+│   │   ├── main.tsx
+│   │   ├── providers
+│   │   └── routes
+│   │       ├── App.tsx
+│   │       └── settings.tsx
+│   ├── assets
+│   │   └── fonts
+│   ├── components
+│   │   ├── index.ts
+│   │   └── layout
+│   │       ├── BottomBar
+│   │       │   ├── BottomBar.tsx
+│   │       │   └── index.ts
+│   │       ├── Header
+│   │       │   ├── Navbar.tsx
+│   │       │   └── index.ts
+│   │       ├── MapCanvas
+│   │       │   ├── MapView.tsx
+│   │       │   └── index.ts
+│   │       └── SearchBox
+│   │           ├── SearchBox.tsx
+│   │           └── index.ts
+│   ├── features
+│   │   ├── places
+│   │   │   ├── api
+│   │   │   │   └── places.api.ts
+│   │   │   ├── components
+│   │   │   │   └── map/MapCanvas
+│   │   │   │       └── routes.ts
+│   │   │   └── hooks
+│   │   └── routing
+│   │       ├── api
+│   │       │   ├── ghModels.ts
+│   │       │   └── routing.api.ts
+│   │       ├── components
+│   │       │   └── RoutePanel
+│   │       │       └── NavPanel.tsx
+│   │       ├── hooks
+│   │       └── lib
+│   │           └── navigation.ts
+│   ├── lib
+│   │   ├── map
+│   │   │   ├── colors.ts
+│   │   │   ├── dom.ts
+│   │   │   ├── routes.ts
+│   │   │   ├── utils.ts
+│   │   │   └── view.ts
+│   │   ├── openInfo.ts
+│   │   └── workers
+│   ├── styles
+│   │   ├── fonts.css
+│   │   └── index.css
+│   └── types
+├── tsconfig.json
+├── vite.config.ts
+└── vitest.config.ts
 ```
-heatwave-client/
-├─ android/                 # Capacitor Android project (Android Studio)
-├─ public/                  # Static assets
-├─ src/
-│  ├─ components/MapView/   # Map + route rendering
-│  ├─ components/...        # UI components
-│  ├─ lib/
-│  │  ├─ routing.ts         # GraphHopper client & profile mapping
-│  │  └─ ghModels.ts        # Custom Model types
-│  └─ main.tsx              # App entry
-├─ package.json
-└─ README.md (this file)
-```
 
-**Backends (prod):**
+⸻
 
-- **Routing:** `https://gh.heatwaves.app` → Caddy (HTTPS) → GraphHopper on VM (`127.0.0.1:8989`)
-- **Tiles:** `https://tiles.heatwaves.app/texas.pmtiles` → Cloudflare R2 + CDN
+Getting Started
 
-> In dev you can point routing to localhost/Android emulator or to the prod host. Tiles are public over HTTPS.
+Prerequisites
+• Node.js 20+ (recommended)
+• npm 9+ (or compatible)
+• Java 17+ (for the GraphHopper server)
 
----
+1. Clone the repository
 
-## Requirements
+git clone maish17/heatwave-client.git
+cd heatwave-client
 
-- Node.js 18+ and npm (or pnpm/yarn)
-- Android Studio (to build or run on a device/emulator)
-- Java 17+ (Android Gradle plugin)
-- Optional: Capacitor CLI `npx cap --version`
+2. Install dependencies
 
----
-
-## Configuration
-
-Create a `.env` in the project root (values shown are sane defaults):
-
-```env
-# Routing base (prod)
-VITE_GH_BASE_URL=https://gh.heatwaves.app
-
-# Optional: GraphHopper.com cloud (not used when self-hosted)
-# VITE_GH_API_KEY=your_cloud_key
-
-# Tiles (PMTiles over HTTPS)
-VITE_PM_TILES_URL=https://tiles.heatwaves.app/texas.pmtiles
-```
-
-Notes:
-
-- The app’s routing client (`src/lib/routing.ts`) also accepts a **runtime override** via the `ghBaseUrl` option if you want to point at `:8989`, `localhost:8989`, or `10.0.2.2:8989` (Android emulator special host).
-- Profiles available on the server must include: `foot_fastest`, `foot_balanced`, `foot_coolest`.
-
----
-
-## Local Development (Web)
-
-```bash
 npm install
+
+3. Configure GraphHopper
+
+This repo assumes you are running a GraphHopper server configured with the files under server/graphhopper.
+
+1. Download the GraphHopper Web JAR matching your GraphHopper version.
+2. Place it somewhere on your machine (outside or inside this repo).
+3. Adjust server/graphhopper/config.yml as needed:
+   • Data source (OSM data for the region)
+   • Graph cache directory
+   • HTTP port (commonly 8989)
+   • Custom model configuration pointing to the three JSON files:
+   • foot-fastest.json
+   • foot-cool.json
+   • foot-balanced.json
+
+Example command (adjust paths, versions, and memory to your setup):
+
+java -Xmx4g -jar graphhopper-web-<version>.jar server server/graphhopper/config.yml
+
+By default, the client expects GraphHopper to be accessible at:
+
+http://localhost:8989/
+
+If you change the port or host, update the routing API configuration in:
+
+src/features/routing/api/routing.api.ts
+
+or in your environment configuration if you externalize it.
+
+4. Map tiles (PMTiles)
+
+The app uses public/tiles/texas.pmtiles as its vector tile source.
+• To use different regions, replace texas.pmtiles with your own PMTiles file and update any hard-coded paths in the map setup code under:
+
+src/lib/map/_
+src/lib/workers/_
+
+Ensure the PMTiles URL used by the frontend matches the file location under public/.
+
+5. Run the development server
+
+In one terminal, ensure GraphHopper is running.
+
+In another terminal (at the repo root):
+
 npm run dev
-# open http://localhost:5173
-```
 
-If you’re running a local GraphHopper on the same machine (e.g., `:8989`), pass it in where `routeBetween` is called, or set `VITE_GH_BASE_URL=http://localhost:8989` in `.env`.
+By default, Vite serves the app at:
 
-**Android emulator talking to your laptop:** use `10.0.2.2:8989` in `.env` or via the `ghBaseUrl` option (the code already normalizes `:8989` to the right host per platform).
+http://localhost:5173/
 
----
+Open that in your browser. You should see the Heatwave map, be able to search/select locations, and request routes using the configured profiles.
 
-## Android (Capacitor) — Run & Build
+⸻
 
-1. Build the web assets:
-   ```bash
-   npm run build
-   ```
-2. Sync native project and open Android Studio:
-   ```bash
-   npx cap sync android
-   npx cap open android
-   ```
-3. **Run** on a device/emulator from Android Studio.
+Build and Production
 
-### Generate an APK (to share/install)
+Build
 
-- Android Studio → **Build** → **Generate App Bundles or APKs** → **Generate APKs** → **debug** (or **release** if you need signing).
-- Output paths:
-  - Debug: `android/app/build/outputs/apk/debug/app-debug.apk`
-  - Release (signed): `android/app/build/outputs/apk/release/app-release.apk`
+npm run build
 
-> “Generate Bundles” (AAB) is for Play Store; for direct installs use an APK.
+This outputs a production build into dist/.
 
----
+Preview (local production preview)
 
-## Routing API (GraphHopper)
+npm run preview
 
-The app calls `POST /route` with JSON. Example:
+This serves the contents of dist/ locally so you can verify the production build.
 
-```bash
-curl -X POST https://gh.heatwaves.app/route \
-  -H 'content-type: application/json' \
-  --data '{
-    "profile": "foot_balanced",
-    "points": [[-97.7429,30.2682], [-97.7400,30.2740]],
-    "points_encoded": false,
-    "locale": "en"
-  }'
-```
+You are responsible for hosting dist/ behind your chosen static hosting solution and ensuring that:
+• The GraphHopper instance is reachable from the client.
+• Any environment-specific routing URLs are correctly configured.
 
-- **Profiles:** must match those configured on the server.
-- When sending a **custom model**, the client automatically disables CH by setting `"ch.disable": true`.
+⸻
 
----
+Testing and Linting
 
-## Production Notes (Server)
+Run tests
 
-> Provided for reference; the backend lives outside this repo.
+Vitest is configured via vitest.config.ts. To run the test suite:
 
-- **GraphHopper** runs on an Ubuntu VM as a **systemd service**.
-- **Caddy** terminates TLS and reverse‑proxies to `127.0.0.1:8989`.
-- Open only **80/443** publicly; keep `8989` private.
-- Profiles configured:
-  - `foot_fastest` (CH)
-  - `foot_balanced` (LM)
-  - `foot_coolest` (LM, custom model)
-- Tiles are served from Cloudflare R2 with `Accept-Ranges`, long‑lived caching, and permissive CORS.
+npm test
 
----
+(or npm run test, depending on your scripts).
 
-## Troubleshooting
+Lint
 
-### “Straight line” routes in the app
+To run ESLint:
 
-- This means the `/route` call failed. Check the browser/Android **console** and **network** tab for the error message.
-- Common causes:
-  - Wrong `VITE_GH_BASE_URL` (or a typo in a profile name).
-  - GraphHopper service not running, or not imported yet.
-  - Corporate/school network doing TLS interception or blocking.
+npm run lint
 
-### School/Enterprise Wi‑Fi
+Fix errors as needed to keep the codebase consistent.
 
-- Some networks install a **mitm** TLS proxy (e.g., “ContentKeeper”). Your device will show errors like _“self-signed certificate in certificate chain”_ and TLS will fail.  
-  ✅ Try a **mobile hotspot** or **VPN**.
+⸻
 
-### PMTiles don’t load
+Mobile Builds (Capacitor)
 
-- Make sure the device can resolve `tiles.heatwaves.app` and reach it over HTTPS.
-- Confirm CORS/Range support:
-  ```bash
-  curl -I https://tiles.heatwaves.app/texas.pmtiles
-  curl -I -H "Range: bytes=0-15" https://tiles.heatwaves.app/texas.pmtiles
-  ```
-- If a vector style fails, the app **auto‑falls back** to a demo style so the map still renders.
+Capacitor is configured via capacitor.config.ts so the app can be packaged as a native shell.
 
-### Android emulator & localhost
+Basic flow (high level):
+npm run build
+npx cap sync
+npx cap open android
 
-- Use `10.0.2.2` instead of `localhost` to reach services running on your Mac.
-- The code accepts `:8989` and normalizes it per platform.
+Further details (signing, store deployment, native plugins) should follow official Capacitor and platform documentation.
 
----
+⸻
 
-## Scripts
+Routing Profiles and Custom Models
 
-Common npm scripts (actual names may vary by `package.json`):
+The three main GraphHopper custom models live in:
 
-- `dev` – start Vite dev server
-- `build` – production web build
-- `preview` – preview production build
-- `cap sync android` – sync Capacitor Android project
+server/graphhopper/custom_models/
+foot-fastest.json
+foot-cool.json
+foot-balanced.json
 
----
+Typical usage:
+• foot-fastest:
+• Prioritizes low total travel time / distance.
+• foot-cool:
+• Adds penalties for high-exposure segments (e.g., lack of shade, steep climbs, undesirable surfaces).
+• foot-balanced:
+• Blends both considerations, giving a route that is reasonably quick while avoiding the worst segments.
 
-## Contributing
+The frontend refers to these profiles via ghModels.ts and uses them when requesting routes through routing.api.ts. If you change model names or add new profiles, update ghModels.ts and any UI references accordingly.
 
-1. Create a branch: `git checkout -b feature/my-change`
-2. Commit changes: `git commit -m "feat: add X"`
-3. Push: `git push origin feature/my-change`
-4. Open a PR
+⸻
 
-Please run `npm run build` locally before opening a PR and ensure the map renders and routes work against your chosen backend.
-
----
-
-## License
-
-MIT © 2025 Heatwave
-
----
-
-## Acknowledgements
-
-- [MapLibre GL JS](https://maplibre.org/)
-- [PMTiles](https://protomaps.com/pmtiles/)
-- [GraphHopper](https://www.graphhopper.com/)
-- OpenStreetMap contributors
-
----
-
-## Contact
-
-- Issues: open a GitHub issue on this repo
-- Email: team@heatwaves.app (placeholder)
+Notes
+• Environment-specific details (e.g., production URLs, API keys for places/geocoding, etc.) should be added where appropriate in src/features/\*/api and/or via Vite environment variables.
+• If you extend the app with additional map sources, layers, or workers, keep related code under src/lib/map and src/lib/workers to maintain the current structure.

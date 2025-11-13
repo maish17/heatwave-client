@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Protocol, PMTiles } from "pmtiles";
 import { reverseGeocode } from "../../../features/places/api/places.api";
 import {
   routeBetween,
@@ -19,10 +18,13 @@ import type { RouteResult } from "../../../features/routing/api/routing.api";
 import type { ExpressionSpecification } from "maplibre-gl";
 import { openInfo, INFO_URL } from "../../../lib/openInfo";
 import { Capacitor } from "@capacitor/core";
-
-let pmtilesRegistered = false;
-
-const PMTILES_URL = "https://tiles.heatwaves.app/texas.pmtiles";
+import {
+  getTilesUrl,
+  ensurePmtilesFor,
+  makePmtilesVectorSource,
+  makeBaseStyle,
+  onSourceLoaded,
+} from "@/shared/tiles";
 
 const FALLBACK_STYLE_URL = "https://demotiles.maplibre.org/style.json";
 
@@ -64,6 +66,18 @@ const LYR_COOL = "hw-route-cool";
 const NAV_ZOOM = 18;
 const NAV_PITCH = 0;
 const PICKER_ZOOMOUT_DELTA = 0.15;
+
+function disableDebugOverlays(map: maplibregl.Map) {
+  try {
+    (map as any).showTileBoundaries = false;
+  } catch {}
+  try {
+    (map as any).showCollisionBoxes = false;
+  } catch {}
+  try {
+    (map as any).showOverdrawInspector = false;
+  } catch {}
+}
 
 function lineFeature(a: LngLat, b: LngLat) {
   return {
@@ -236,19 +250,17 @@ export default function MapView() {
     if (mapRef.current || !divRef.current) return;
     let style: any;
     try {
-      if (!pmtilesRegistered) {
-        const protocol = new Protocol();
-        maplibregl.addProtocol("pmtiles", protocol.tile);
-        pmtilesRegistered = true;
-        const p = new PMTiles(PMTILES_URL);
-        protocol.add(p);
-        p.getHeader().catch(() => {});
-      }
+      const TILES_URL = getTilesUrl();
+      ensurePmtilesFor(TILES_URL);
+
+      const texas = makePmtilesVectorSource("texas", TILES_URL);
 
       style = {
         version: 8,
         glyphs: "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
-        sources: { texas: { type: "vector", url: "pmtiles://" + PMTILES_URL } },
+        sources: {
+          [texas.id]: { type: texas.type, url: texas.url },
+        },
         layers: [
           {
             id: "bg",
@@ -484,6 +496,8 @@ export default function MapView() {
     }
 
     let map: maplibregl.Map;
+    // For disabling debug overlays
+    let turnOffDebug: (() => void) | undefined;
     try {
       map = new maplibregl.Map({
         container: divRef.current!,
@@ -498,6 +512,11 @@ export default function MapView() {
         // @ts-expect-error runtime option exists
         prefetchZoomDelta: 1,
       });
+
+      // Force debug overlays off (tile borders/labels)
+      disableDebugOverlays(map);
+      turnOffDebug = () => disableDebugOverlays(map);
+      map.on("style.load", turnOffDebug);
 
       map.on("error", (e) => {
         const msg =
@@ -515,6 +534,10 @@ export default function MapView() {
         zoom: viewRef.current.zoom,
         attributionControl: false,
       });
+      // Force debug overlays off (tile borders/labels)
+      disableDebugOverlays(map);
+      turnOffDebug = () => disableDebugOverlays(map);
+      map.on("style.load", turnOffDebug);
     }
     map.addControl(
       new maplibregl.NavigationControl({ showZoom: true, showCompass: false }),
@@ -632,6 +655,11 @@ export default function MapView() {
       popupRef.current?.remove();
 
       safeRemoveRoutes(map);
+
+      // Remove debug re-applier
+      try {
+        map.off("style.load", turnOffDebug as any);
+      } catch {}
 
       map.remove();
       mapRef.current = null;
